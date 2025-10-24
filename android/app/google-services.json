@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "557551406578",
+    "project_id": "eventbridge-a9a88",
+    "storage_bucket": "eventbridge-a9a88.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:557551406578:android:ee2afcce687c7160996f6b",
+        "android_client_info": {
+          "package_name": "com.example.baust_event"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyA7ZNmBU6_Bc2GtbjsTLWaoh4DzIoehXu4"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
