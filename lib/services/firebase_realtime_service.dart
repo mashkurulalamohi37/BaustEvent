@@ -36,7 +36,7 @@ class FirebaseRealtimeService {
         .snapshots()
         .map((doc) {
       if (doc.exists) {
-        return Event.fromFirestore(doc);
+        return EventFirestore.fromFirestore(doc);
       }
       return null;
     });
@@ -65,7 +65,7 @@ class FirebaseRealtimeService {
         .orderBy('date', descending: false)
         .snapshots()
         .map((snapshot) => snapshot.docs
-            .map((doc) => Event.fromFirestore(doc))
+            .map((doc) => EventFirestore.fromFirestore(doc))
             .toList());
   }
 
@@ -77,7 +77,7 @@ class FirebaseRealtimeService {
         .orderBy('date', descending: false)
         .snapshots()
         .map((snapshot) => snapshot.docs
-            .map((doc) => Event.fromFirestore(doc))
+            .map((doc) => EventFirestore.fromFirestore(doc))
             .toList());
   }
 
@@ -93,7 +93,7 @@ class FirebaseRealtimeService {
         .orderBy('date', descending: false)
         .snapshots()
         .map((snapshot) => snapshot.docs
-            .map((doc) => Event.fromFirestore(doc))
+            .map((doc) => EventFirestore.fromFirestore(doc))
             .toList());
   }
 

@@ -99,6 +99,67 @@ class Event {
 
 }
 
+// Firestore helpers
+extension EventFirestore on Event {
+  Map<String, dynamic> toFirestore() {
+    return {
+      'title': title,
+      'description': description,
+      // Store as Timestamp-compatible ISO string for simplicity; services will convert when needed
+      'date': date.toIso8601String(),
+      'time': time,
+      'location': location,
+      'category': category,
+      'organizerId': organizerId,
+      'participants': participants,
+      'status': status.name,
+      'maxParticipants': maxParticipants,
+      'imageUrl': imageUrl,
+    };
+  }
+
+  static Event fromFirestore(dynamic doc) {
+    final data = doc.data() as Map<String, dynamic>;
+    final String id = doc.id as String;
+    // Accept either Timestamp-like map, millis, or ISO string
+    DateTime _parseDate(dynamic raw) {
+      if (raw == null) return DateTime.now();
+      if (raw is DateTime) return raw;
+      if (raw is String) {
+        final parsed = DateTime.tryParse(raw);
+        return parsed ?? DateTime.now();
+      }
+      if (raw is int) {
+        return DateTime.fromMillisecondsSinceEpoch(raw);
+      }
+      // Firestore Timestamp has toDate()
+      try {
+        final toDate = raw.toDate();
+        if (toDate is DateTime) return toDate;
+      } catch (_) {}
+      return DateTime.now();
+    }
+
+    return Event(
+      id: id,
+      title: data['title'] ?? '',
+      description: data['description'] ?? '',
+      date: _parseDate(data['date']),
+      time: data['time'] ?? '',
+      location: data['location'] ?? '',
+      category: data['category'] ?? '',
+      organizerId: data['organizerId'] ?? '',
+      participants: List<String>.from(data['participants'] ?? const []),
+      status: EventStatus.values.firstWhere(
+        (e) => e.name == (data['status'] ?? 'draft'),
+        orElse: () => EventStatus.draft,
+      ),
+      maxParticipants: (data['maxParticipants'] as int?) ?? 100,
+      imageUrl: data['imageUrl'] as String?,
+    );
+  }
+}
+
 enum EventStatus {
   draft,
   published,

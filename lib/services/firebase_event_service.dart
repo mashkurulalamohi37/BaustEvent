@@ -1,70 +1,132 @@
+import 'package:cloud_firestore/cloud_firestore.dart';
 import '../models/event.dart';
 
 class FirebaseEventService {
-  // Get all events (returns empty list since no Firestore)
+  static final FirebaseFirestore _firestore = FirebaseFirestore.instance;
+  static CollectionReference<Map<String, dynamic>> get _eventsCol =>
+      _firestore.collection('events');
+
+  // Queries
   static Future<List<Event>> getAllEvents() async {
-    return [];
+    final snap = await _eventsCol.orderBy('date', descending: false).get();
+    return snap.docs.map((d) => EventFirestore.fromFirestore(d)).toList();
   }
 
-  // Get events by organizer (returns empty list since no Firestore)
+  static Stream<List<Event>> getAllEventsStream() {
+    return _eventsCol
+        .orderBy('date', descending: false)
+        .snapshots()
+        .map((s) => s.docs.map((d) => EventFirestore.fromFirestore(d)).toList());
+  }
+
   static Future<List<Event>> getEventsByOrganizer(String organizerId) async {
-    return [];
+    final snap = await _eventsCol
+        .where('organizerId', isEqualTo: organizerId)
+        .orderBy('date', descending: false)
+        .get();
+    return snap.docs.map((d) => EventFirestore.fromFirestore(d)).toList();
   }
 
-  // Get user events (returns empty list since no Firestore)
+  static Stream<List<Event>> getEventsByOrganizerStream(String organizerId) {
+    return _eventsCol
+        .where('organizerId', isEqualTo: organizerId)
+        .orderBy('date', descending: false)
+        .snapshots()
+        .map((s) => s.docs.map((d) => EventFirestore.fromFirestore(d)).toList());
+  }
+
   static Future<List<Event>> getUserEvents(String userId) async {
-    return [];
+    final snap = await _eventsCol.where('participants', arrayContains: userId).get();
+    return snap.docs.map((d) => EventFirestore.fromFirestore(d)).toList();
   }
 
-  // Search events (returns empty list since no Firestore)
+  static Stream<List<Event>> getUserEventsStream(String userId) {
+    return _eventsCol
+        .where('participants', arrayContains: userId)
+        .snapshots()
+        .map((s) => s.docs.map((d) => EventFirestore.fromFirestore(d)).toList());
+  }
+
   static Future<List<Event>> searchEvents(String query) async {
-    return [];
+    // Simple search over title/category; Firestore requires indexing for complex queries
+    final snap = await _eventsCol.get();
+    final q = query.toLowerCase();
+    return snap.docs
+        .map((d) => EventFirestore.fromFirestore(d))
+        .where((e) => e.title.toLowerCase().contains(q) ||
+            e.description.toLowerCase().contains(q) ||
+            e.category.toLowerCase().contains(q))
+        .toList();
   }
 
-  // Get events by category (returns empty list since no Firestore)
   static Future<List<Event>> getEventsByCategory(String category) async {
-    return [];
+    final snap = await _eventsCol
+        .where('category', isEqualTo: category)
+        .orderBy('date', descending: false)
+        .get();
+    return snap.docs.map((d) => EventFirestore.fromFirestore(d)).toList();
   }
 
-  // Create event (returns false since no Firestore)
+  // Mutations
   static Future<bool> createEvent(Event event) async {
-    print('Event creation not available without Firestore');
-    return false;
+    try {
+      await _eventsCol.doc(event.id).set(event.toFirestore());
+      return true;
+    } catch (e) {
+      return false;
+    }
   }
 
-  // Update event (returns false since no Firestore)
   static Future<bool> updateEvent(Event event) async {
-    print('Event update not available without Firestore');
-    return false;
+    try {
+      await _eventsCol.doc(event.id).update(event.toFirestore());
+      return true;
+    } catch (e) {
+      return false;
+    }
   }
 
-  // Delete event (returns false since no Firestore)
   static Future<bool> deleteEvent(String eventId) async {
-    print('Event deletion not available without Firestore');
-    return false;
+    try {
+      await _eventsCol.doc(eventId).delete();
+      return true;
+    } catch (e) {
+      return false;
+    }
   }
 
-  // Join event (returns false since no Firestore)
-  static Future<bool> joinEvent(String eventId, String userId) async {
-    print('Event joining not available without Firestore');
-    return false;
-  }
-
-  // Leave event (returns false since no Firestore)
-  static Future<bool> leaveEvent(String eventId, String userId) async {
-    print('Event leaving not available without Firestore');
-    return false;
-  }
-
-  // Register for event (returns false since no Firestore)
   static Future<bool> registerForEvent(String eventId, String userId) async {
-    print('Event registration not available without Firestore');
-    return false;
+    try {
+      final ref = _eventsCol.doc(eventId);
+      return await _firestore.runTransaction((tx) async {
+        final snap = await tx.get(ref);
+        if (!snap.exists) return false;
+        final event = EventFirestore.fromFirestore(snap);
+        if (event.participants.contains(userId)) return true;
+        if (event.participants.length >= event.maxParticipants) return false;
+        final updated = List<String>.from(event.participants)..add(userId);
+        tx.update(ref, {'participants': updated});
+        return true;
+      });
+    } catch (e) {
+      return false;
+    }
   }
 
-  // Unregister from event (returns false since no Firestore)
   static Future<bool> unregisterFromEvent(String eventId, String userId) async {
-    print('Event unregistration not available without Firestore');
-    return false;
+    try {
+      final ref = _eventsCol.doc(eventId);
+      return await _firestore.runTransaction((tx) async {
+        final snap = await tx.get(ref);
+        if (!snap.exists) return false;
+        final event = EventFirestore.fromFirestore(snap);
+        if (!event.participants.contains(userId)) return true;
+        final updated = List<String>.from(event.participants)..remove(userId);
+        tx.update(ref, {'participants': updated});
+        return true;
+      });
+    } catch (e) {
+      return false;
+    }
   }
 }
