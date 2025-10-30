@@ -8,6 +8,39 @@ class FirebaseUserService {
   static CollectionReference<Map<String, dynamic>> get _usersCol =>
       _firestore.collection('users');
 
+  // Local parsing helpers (cannot use private helpers from user.dart)
+  static UserType _parseUserTypeAny(dynamic raw) {
+    if (raw is UserType) return raw;
+    if (raw is String) {
+      final lower = raw.toLowerCase();
+      for (final v in UserType.values) {
+        if (v.name.toLowerCase() == lower) return v;
+      }
+      if (lower == 'org' || lower == 'admin' || lower == 'organiser') {
+        return UserType.organizer;
+      }
+      return UserType.participant;
+    }
+    if (raw is int) {
+      if (raw >= 0 && raw < UserType.values.length) {
+        return UserType.values[raw];
+      }
+    }
+    return UserType.participant;
+  }
+
+  static DateTime? _parseDateAny(dynamic raw) {
+    if (raw == null) return null;
+    if (raw is DateTime) return raw;
+    if (raw is String) return DateTime.tryParse(raw);
+    if (raw is int) return DateTime.fromMillisecondsSinceEpoch(raw);
+    try {
+      final toDate = raw.toDate();
+      if (toDate is DateTime) return toDate;
+    } catch (_) {}
+    return null;
+  }
+
   // Get current user (Firebase Auth only)
   static User? getCurrentUser() {
     final firebaseUser = _auth.currentUser;
@@ -39,11 +72,11 @@ class FirebaseUserService {
           email: (data['email'] as String?) ?? firebaseUser.email ?? '',
           name: (data['name'] as String?) ?? firebaseUser.displayName ?? '',
           universityId: (data['universityId'] as String?) ?? '',
-          type: User._parseUserType((data['type'] ?? 'participant')),
+          type: _parseUserTypeAny((data['type'] ?? 'participant')),
           profileImageUrl: data['profileImageUrl'] as String?,
-          createdAt: User._parseDateTime(data['createdAt']) ??
+          createdAt: _parseDateAny(data['createdAt']) ??
               (firebaseUser.metadata.creationTime ?? DateTime.now()),
-          lastLoginAt: User._parseDateTime(data['lastLoginAt']) ??
+          lastLoginAt: _parseDateAny(data['lastLoginAt']) ??
               firebaseUser.metadata.lastSignInTime,
         );
       }
@@ -195,10 +228,10 @@ class FirebaseUserService {
         email: (data['email'] as String?) ?? '',
         name: (data['name'] as String?) ?? '',
         universityId: (data['universityId'] as String?) ?? '',
-        type: User._parseUserType(data['type'] ?? 'participant'),
+        type: _parseUserTypeAny(data['type'] ?? 'participant'),
         profileImageUrl: data['profileImageUrl'] as String?,
-        createdAt: User._parseDateTime(data['createdAt']) ?? DateTime.now(),
-        lastLoginAt: User._parseDateTime(data['lastLoginAt']),
+        createdAt: _parseDateAny(data['createdAt']) ?? DateTime.now(),
+        lastLoginAt: _parseDateAny(data['lastLoginAt']),
       );
     }).toList();
   }
