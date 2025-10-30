@@ -278,4 +278,24 @@ class FirebaseUserService {
       return await getCurrentUserWithDetails();
     });
   }
+
+  // Ensure current Firebase Auth user has a Firestore profile document
+  static Future<void> ensureCurrentUserDocument() async {
+    final firebaseUser = _auth.currentUser;
+    if (firebaseUser == null) return;
+    final ref = _usersCol.doc(firebaseUser.uid);
+    final doc = await ref.get();
+    if (!doc.exists) {
+      final now = DateTime.now();
+      await ref.set({
+        'email': firebaseUser.email ?? '',
+        'name': firebaseUser.displayName ?? '',
+        'universityId': '',
+        'type': 'participant',
+        'profileImageUrl': null,
+        'createdAt': (firebaseUser.metadata.creationTime ?? now).toIso8601String(),
+        'lastLoginAt': (firebaseUser.metadata.lastSignInTime ?? now).toIso8601String(),
+      });
+    }
+  }
 }
