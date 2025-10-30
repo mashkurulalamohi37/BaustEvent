@@ -239,15 +239,24 @@ class _AuthScreenState extends State<AuthScreen> {
 
     if (isLogin) {
       // Firebase authentication login
-      final user = await FirebaseUserService.signInWithEmailAndPassword(
+      final credUser = await FirebaseUserService.signInWithEmailAndPassword(
         _emailController.text.trim(),
         _passwordController.text.trim(),
       );
       
-      if (user == null) {
+      if (credUser == null) {
         if (!mounted) return;
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(content: Text('Login failed. Please check your credentials.'), backgroundColor: Colors.red),
+        );
+        return;
+      }
+      // Load full profile (with role) from Firestore
+      final user = await FirebaseUserService.getCurrentUserWithDetails();
+      if (user == null) {
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Profile not found. Please contact support.'), backgroundColor: Colors.red),
         );
         return;
       }

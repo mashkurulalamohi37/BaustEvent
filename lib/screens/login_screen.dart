@@ -33,13 +33,19 @@ class _LoginScreenState extends State<LoginScreen> {
 
     try {
       // Firebase authentication login
-      final user = await FirebaseUserService.signInWithEmailAndPassword(
+      final userCred = await FirebaseUserService.signInWithEmailAndPassword(
         _emailController.text.trim(),
         _passwordController.text.trim(),
       );
 
-      if (user == null) {
+      if (userCred == null) {
         throw Exception('Login failed. Please check your credentials.');
+      }
+
+      // Fetch full profile (role) from Firestore after auth
+      final user = await FirebaseUserService.getCurrentUserWithDetails();
+      if (user == null) {
+        throw Exception('Profile not found. Please contact support.');
       }
 
       if (mounted) {
