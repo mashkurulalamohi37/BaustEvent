@@ -273,7 +273,7 @@ class _AuthScreenState extends State<AuthScreen> {
     } else {
       // Create user with Firebase authentication
       try {
-        final user = await FirebaseUserService.createUserWithEmailAndPassword(
+        final created = await FirebaseUserService.createUserWithEmailAndPassword(
           email: _emailController.text.trim(),
           password: _passwordController.text.trim(),
           name: _nameController.text.trim(),
@@ -281,7 +281,7 @@ class _AuthScreenState extends State<AuthScreen> {
           type: _selectedType,
         );
         
-        if (user == null) {
+        if (created == null) {
           if (!mounted) return;
           ScaffoldMessenger.of(context).showSnackBar(
             const SnackBar(content: Text('Failed to create account'), backgroundColor: Colors.red),
@@ -289,6 +289,16 @@ class _AuthScreenState extends State<AuthScreen> {
           return;
         }
         
+        // Fetch profile from Firestore to ensure role and details are persisted
+        final user = await FirebaseUserService.getCurrentUserWithDetails();
+        if (user == null) {
+          if (!mounted) return;
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Account created but profile not found. Please try signing in.'), backgroundColor: Colors.orange),
+          );
+          return;
+        }
+
         if (!mounted) return;
         Navigator.pushReplacement(
           context,
