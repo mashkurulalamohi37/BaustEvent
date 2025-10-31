@@ -20,6 +20,7 @@ class _AuthScreenState extends State<AuthScreen> {
   final _nameController = TextEditingController();
   final _universityIdController = TextEditingController();
   UserType _selectedType = UserType.participant;
+  bool _isLoading = false;
 
   @override
   void dispose() {
@@ -99,10 +100,19 @@ class _AuthScreenState extends State<AuthScreen> {
                   onChanged: (v) => setState(() => _selectedType = v ?? UserType.participant),
                 ),
                 const SizedBox(height: 16),
-                _buildTextField(
+                TextFormField(
                   controller: _nameController,
-                  label: 'Full Name',
-                  icon: Icons.person,
+                  decoration: InputDecoration(
+                    labelText: 'Full Name',
+                    prefixIcon: const Icon(Icons.person),
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    focusedBorder: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(12),
+                      borderSide: const BorderSide(color: Color(0xFF1976D2), width: 2),
+                    ),
+                  ),
                   validator: (value) {
                     if (value == null || value.isEmpty) {
                       return 'Please enter your full name';
@@ -111,10 +121,19 @@ class _AuthScreenState extends State<AuthScreen> {
                   },
                 ),
                 const SizedBox(height: 16),
-                _buildTextField(
+                TextFormField(
                   controller: _universityIdController,
-                  label: 'University ID',
-                  icon: Icons.badge,
+                  decoration: InputDecoration(
+                    labelText: 'University ID',
+                    prefixIcon: const Icon(Icons.badge),
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    focusedBorder: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(12),
+                      borderSide: const BorderSide(color: Color(0xFF1976D2), width: 2),
+                    ),
+                  ),
                   validator: (value) {
                     if (value == null || value.isEmpty) {
                       return 'Please enter your university ID';
@@ -124,11 +143,20 @@ class _AuthScreenState extends State<AuthScreen> {
                 ),
                 const SizedBox(height: 16),
               ],
-              _buildTextField(
+              TextFormField(
                 controller: _emailController,
-                label: 'Email',
-                icon: Icons.email,
                 keyboardType: TextInputType.emailAddress,
+                decoration: InputDecoration(
+                  labelText: 'Email',
+                  prefixIcon: const Icon(Icons.email),
+                  border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  focusedBorder: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(12),
+                    borderSide: const BorderSide(color: Color(0xFF1976D2), width: 2),
+                  ),
+                ),
                 validator: (value) {
                   if (value == null || value.isEmpty) {
                     return 'Please enter your email';
@@ -140,11 +168,20 @@ class _AuthScreenState extends State<AuthScreen> {
                 },
               ),
               const SizedBox(height: 16),
-              _buildTextField(
+              TextFormField(
                 controller: _passwordController,
-                label: 'Password',
-                icon: Icons.lock,
                 obscureText: true,
+                decoration: InputDecoration(
+                  labelText: 'Password',
+                  prefixIcon: const Icon(Icons.lock),
+                  border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  focusedBorder: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(12),
+                    borderSide: const BorderSide(color: Color(0xFF1976D2), width: 2),
+                  ),
+                ),
                 validator: (value) {
                   if (value == null || value.isEmpty) {
                     return 'Please enter your password';
@@ -159,21 +196,23 @@ class _AuthScreenState extends State<AuthScreen> {
               SizedBox(
                 height: 56,
                 child: ElevatedButton(
-                  onPressed: _onSubmit,
+                  onPressed: _isLoading ? null : _onSubmit,
                   style: ElevatedButton.styleFrom(
                     backgroundColor: const Color(0xFF1976D2),
                     shape: RoundedRectangleBorder(
                       borderRadius: BorderRadius.circular(12),
                     ),
                   ),
-                  child: Text(
-                    isLogin ? 'Sign In' : 'Sign Up',
-                    style: const TextStyle(
-                      fontSize: 18,
-                      fontWeight: FontWeight.w600,
-                      color: Colors.white,
-                    ),
-                  ),
+                  child: _isLoading
+                      ? const CircularProgressIndicator(color: Colors.white)
+                      : Text(
+                          isLogin ? 'Sign In' : 'Sign Up',
+                          style: const TextStyle(
+                            fontSize: 18,
+                            fontWeight: FontWeight.w600,
+                            color: Colors.white,
+                          ),
+                        ),
                 ),
               ),
               const SizedBox(height: 24),
@@ -207,71 +246,61 @@ class _AuthScreenState extends State<AuthScreen> {
     );
   }
 
-  Widget _buildTextField({
-    required TextEditingController controller,
-    required String label,
-    required IconData icon,
-    bool obscureText = false,
-    TextInputType? keyboardType,
-    String? Function(String?)? validator,
-  }) {
-    return TextFormField(
-      controller: controller,
-      obscureText: obscureText,
-      keyboardType: keyboardType,
-      validator: validator,
-      decoration: InputDecoration(
-        labelText: label,
-        prefixIcon: Icon(icon),
-        border: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(12),
-        ),
-        focusedBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(12),
-          borderSide: const BorderSide(color: Color(0xFF1976D2), width: 2),
-        ),
-      ),
-    );
-  }
-
   Future<void> _onSubmit() async {
     if (!_formKey.currentState!.validate()) return;
 
+    setState(() => _isLoading = true);
+
     if (isLogin) {
-      // Firebase authentication login
-      final credUser = await FirebaseUserService.signInWithEmailAndPassword(
-        _emailController.text.trim(),
-        _passwordController.text.trim(),
-      );
-      
-      if (credUser == null) {
+      // Since authentication is removed, we'll create a user or find existing one
+      try {
+        final user = await FirebaseUserService.signInWithEmailAndPassword(
+          _emailController.text.trim(),
+          _passwordController.text.trim(),
+        );
+        
+        if (user == null) {
+          // Create user if doesn't exist (since no auth)
+          final newUser = await FirebaseUserService.createUserWithEmailAndPassword(
+            email: _emailController.text.trim(),
+            password: _passwordController.text.trim(),
+            name: _emailController.text.split('@')[0],
+            universityId: 'USER${DateTime.now().millisecondsSinceEpoch}',
+            type: UserType.participant,
+          );
+          
+          if (newUser == null || !mounted) return;
+          
+          Navigator.pushReplacement(
+            context,
+            MaterialPageRoute(
+              builder: (context) => newUser.type == UserType.organizer
+                  ? OrganizerDashboard(userId: newUser.id)
+                  : ParticipantDashboard(userId: newUser.id),
+            ),
+          );
+        } else {
+          if (!mounted) return;
+          Navigator.pushReplacement(
+            context,
+            MaterialPageRoute(
+              builder: (context) => user.type == UserType.organizer
+                  ? OrganizerDashboard(userId: user.id)
+                  : ParticipantDashboard(userId: user.id),
+            ),
+          );
+        }
+      } catch (e) {
         if (!mounted) return;
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Login failed. Please check your credentials.'), backgroundColor: Colors.red),
+          SnackBar(
+            content: Text('Error: ${e.toString()}'),
+            backgroundColor: Colors.red,
+          ),
         );
-        return;
       }
-      // Load full profile (with role) from Firestore
-      final user = await FirebaseUserService.getCurrentUserWithDetails();
-      if (user == null) {
-        if (!mounted) return;
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Profile not found. Please contact support.'), backgroundColor: Colors.red),
-        );
-        return;
-      }
-      
-      if (!mounted) return;
-      Navigator.pushReplacement(
-        context,
-        MaterialPageRoute(
-          builder: (context) => user.type == UserType.organizer
-              ? const OrganizerDashboard()
-              : const ParticipantDashboard(),
-        ),
-      );
     } else {
-      // Create user with Firebase authentication
+      // Create user with Firebase (creates in Firestore)
       try {
         final created = await FirebaseUserService.createUserWithEmailAndPassword(
           email: _emailController.text.trim(),
@@ -282,42 +311,64 @@ class _AuthScreenState extends State<AuthScreen> {
         );
         
         if (created == null) {
-          if (!mounted) return;
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('Failed to create account'), backgroundColor: Colors.red),
-          );
-          return;
+          throw Exception('Failed to create user. Please try again.');
         }
         
-        // Fetch profile from Firestore to ensure role and details are persisted
-        final user = await FirebaseUserService.getCurrentUserWithDetails();
-        if (user == null) {
-          if (!mounted) return;
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('Account created but profile not found. Please try signing in.'), backgroundColor: Colors.orange),
-          );
+        // Use the created user directly
+        final user = created;
+
+        if (!mounted) {
+          setState(() => _isLoading = false);
           return;
         }
-
-        if (!mounted) return;
         Navigator.pushReplacement(
           context,
           MaterialPageRoute(
             builder: (context) => user.type == UserType.organizer
-                ? const OrganizerDashboard()
-                : const ParticipantDashboard(),
+                ? OrganizerDashboard(userId: user.id)
+                : ParticipantDashboard(userId: user.id),
           ),
         );
       } catch (e) {
-        if (!mounted) return;
+        if (!mounted) {
+          setState(() => _isLoading = false);
+          return;
+        }
+        String errorMessage = e.toString().replaceFirst('Exception: ', '');
+        
+        // Provide more user-friendly error messages
+        if (errorMessage.contains('PERMISSION_DENIED') || 
+            errorMessage.contains('permission-denied') || 
+            errorMessage.contains('permission denied')) {
+          errorMessage = 'Permission denied. Please check your Firestore security rules in Firebase Console.';
+        } else if (errorMessage.contains('UNAVAILABLE') || 
+                   errorMessage.contains('unavailable')) {
+          errorMessage = 'Firestore is unavailable. Please check your internet connection and try again.';
+        } else if (errorMessage.contains('NOT_FOUND') || 
+                   errorMessage.contains('not-found')) {
+          errorMessage = 'Database not found. Please ensure Firestore is enabled in Firebase Console.';
+        } else if (errorMessage.contains('already-exists') || 
+                   errorMessage.contains('already exists')) {
+          errorMessage = 'An account with this email already exists. Please sign in instead.';
+        } else if (errorMessage.contains('unimplemented') || 
+                   errorMessage.contains('not available')) {
+          errorMessage = 'Firestore is not properly configured. Please check your Firebase setup.';
+        }
+        
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text(e.toString().replaceFirst('Exception: ', '')),
+            content: Text(errorMessage),
             backgroundColor: Colors.red,
-            duration: const Duration(seconds: 4),
+            duration: const Duration(seconds: 5),
           ),
         );
+        setState(() => _isLoading = false);
       }
+    }
+    
+    if (mounted) {
+      setState(() => _isLoading = false);
     }
   }
 }
+

@@ -64,9 +64,13 @@ class FirebaseRealtimeService {
         .where('category', isEqualTo: category)
         .orderBy('date', descending: false)
         .snapshots()
-        .map((snapshot) => snapshot.docs
-            .map((doc) => EventFirestore.fromFirestore(doc))
-            .toList());
+        .map((snapshot) {
+          // Filter out deleted documents
+          return snapshot.docs
+              .where((doc) => doc.exists && doc.data() != null)
+              .map((doc) => EventFirestore.fromFirestore(doc))
+              .toList();
+        });
   }
 
   // Listen to events by status with real-time updates
@@ -76,9 +80,13 @@ class FirebaseRealtimeService {
         .where('status', isEqualTo: status.name)
         .orderBy('date', descending: false)
         .snapshots()
-        .map((snapshot) => snapshot.docs
-            .map((doc) => EventFirestore.fromFirestore(doc))
-            .toList());
+        .map((snapshot) {
+          // Filter out deleted documents
+          return snapshot.docs
+              .where((doc) => doc.exists && doc.data() != null)
+              .map((doc) => EventFirestore.fromFirestore(doc))
+              .toList();
+        });
   }
 
   // Listen to upcoming events (next 30 days)
@@ -92,9 +100,13 @@ class FirebaseRealtimeService {
         .where('date', isLessThanOrEqualTo: Timestamp.fromDate(thirtyDaysFromNow))
         .orderBy('date', descending: false)
         .snapshots()
-        .map((snapshot) => snapshot.docs
-            .map((doc) => EventFirestore.fromFirestore(doc))
-            .toList());
+        .map((snapshot) {
+          // Filter out deleted documents
+          return snapshot.docs
+              .where((doc) => doc.exists && doc.data() != null)
+              .map((doc) => EventFirestore.fromFirestore(doc))
+              .toList();
+        });
   }
 
   // Listen to events happening today
@@ -109,9 +121,13 @@ class FirebaseRealtimeService {
         .where('date', isLessThanOrEqualTo: Timestamp.fromDate(endOfDay))
         .orderBy('date', descending: false)
         .snapshots()
-        .map((snapshot) => snapshot.docs
-            .map((doc) => Event.fromFirestore(doc))
-            .toList());
+        .map((snapshot) {
+          // Filter out deleted documents
+          return snapshot.docs
+              .where((doc) => doc.exists && doc.data() != null)
+              .map((doc) => EventFirestore.fromFirestore(doc))
+              .toList();
+        });
   }
 
   // Set up event reminders

@@ -10,17 +10,26 @@ class FirebaseStorageService {
   // Upload event image
   static Future<String?> uploadEventImage(String eventId, XFile imageFile) async {
     try {
+      print('Starting image upload for event: $eventId');
       final ref = _storage
           .ref()
           .child('$_eventImagesPath/$eventId.jpg');
       
+      print('Uploading file: ${imageFile.path}');
       final uploadTask = ref.putFile(File(imageFile.path));
-      final snapshot = await uploadTask;
+      final snapshot = await uploadTask.timeout(
+        const Duration(seconds: 30),
+        onTimeout: () {
+          throw Exception('Image upload timeout');
+        },
+      );
+      print('Upload complete, getting download URL...');
       final downloadUrl = await snapshot.ref.getDownloadURL();
-      
+      print('Download URL: $downloadUrl');
       return downloadUrl;
     } catch (e) {
       print('Error uploading event image: $e');
+      // Don't fail event creation if image upload fails
       return null;
     }
   }

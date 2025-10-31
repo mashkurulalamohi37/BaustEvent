@@ -1,7 +1,5 @@
 import 'package:flutter/material.dart';
 import 'participant_dashboard.dart';
-import 'organizer_dashboard.dart';
-import 'auth_screen.dart';
 import 'auth_screen.dart';
 
 class WelcomeScreen extends StatelessWidget {
@@ -178,3 +176,4 @@ class WelcomeScreen extends StatelessWidget {
     );
   }
 }
+

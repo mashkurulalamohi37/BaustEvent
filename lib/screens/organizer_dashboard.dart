@@ -1,7 +1,8 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
-import 'welcome_screen.dart';
 import 'event_details_screen.dart';
+import 'welcome_screen.dart';
 import 'create_event_screen.dart';
 import 'edit_event_screen.dart';
 import 'manage_participants_screen.dart';
@@ -12,7 +13,9 @@ import '../services/firebase_user_service.dart';
 import 'edit_profile_screen.dart';
 
 class OrganizerDashboard extends StatefulWidget {
-  const OrganizerDashboard({super.key});
+  final String? userId;
+  
+  const OrganizerDashboard({super.key, this.userId});
 
   @override
   State<OrganizerDashboard> createState() => _OrganizerDashboardState();
@@ -24,6 +27,7 @@ class _OrganizerDashboardState extends State<OrganizerDashboard> {
   List<Event> _myEvents = [];
   User? _currentUser;
   bool _isLoading = true;
+  StreamSubscription<List<Event>>? _eventsSubscription;
 
   @override
   void initState() {
@@ -35,16 +39,59 @@ class _OrganizerDashboardState extends State<OrganizerDashboard> {
     await _loadData();
   }
 
+  @override
+  void dispose() {
+    _eventsSubscription?.cancel();
+    super.dispose();
+  }
+
   Future<void> _loadData() async {
     setState(() => _isLoading = true);
     
     try {
-      final user = await FirebaseUserService.getCurrentUserWithDetails();
-      final myEvents = user != null ? await FirebaseEventService.getEventsByOrganizer(user.id) : <Event>[];
+      User? user;
+      
+      // If userId is provided, fetch user details
+      if (widget.userId != null) {
+        user = await FirebaseUserService.getUserById(widget.userId!);
+      } else {
+        user = await FirebaseUserService.getCurrentUserWithDetails();
+      }
+      
+      // Determine organizer ID
+      String organizerId;
+      if (user != null) {
+        organizerId = user.id;
+      } else if (widget.userId != null) {
+        organizerId = widget.userId!;
+      } else {
+        organizerId = 'guest_organizer';
+      }
+      
+      // Use real-time stream for organizer events
+      _eventsSubscription?.cancel();
+      _eventsSubscription = FirebaseEventService.getEventsByOrganizerStream(organizerId).listen(
+        (events) {
+          if (mounted) {
+            print('Organizer events stream updated: ${events.length} events');
+            setState(() => _myEvents = events);
+          }
+        },
+        onError: (error) {
+          print('Error in organizer events stream: $error');
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(
+                content: Text('Error loading events: $error'),
+                backgroundColor: Colors.red,
+              ),
+            );
+          }
+        },
+      );
       
       setState(() {
         _currentUser = user;
-        _myEvents = myEvents;
         _isLoading = false;
       });
     } catch (e) {
@@ -72,7 +119,9 @@ class _OrganizerDashboardState extends State<OrganizerDashboard> {
               final updated = await Navigator.push(
                 context,
                 MaterialPageRoute(
-                  builder: (context) => const EditProfileScreen(),
+                  builder: (context) => EditProfileScreen(
+                    userId: _currentUser?.id ?? widget.userId,
+                  ),
                 ),
               );
               if (updated == true) {
@@ -124,72 +173,121 @@ class _OrganizerDashboardState extends State<OrganizerDashboard> {
   }
 
   Widget _buildHomeScreen() {
-    return SingleChildScrollView(
-      padding: const EdgeInsets.all(16.0),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          // Quick Stats
-          Row(
-            children: [
-              Expanded(
-                child: _buildStatCard('Total Events', '12', Icons.event, Colors.blue),
-              ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: _buildStatCard('Participants', '245', Icons.people, Colors.green),
-              ),
-            ],
-          ),
-          const SizedBox(height: 12),
-          Row(
-            children: [
-              Expanded(
-                child: _buildStatCard('This Month', '3', Icons.calendar_month, Colors.orange),
-              ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: _buildStatCard('Pending', '2', Icons.pending, Colors.red),
-              ),
-            ],
-          ),
-          const SizedBox(height: 24),
-          // Recent Events
-          const Text(
-            'Recent Events',
-            style: TextStyle(
-              fontSize: 20,
-              fontWeight: FontWeight.bold,
+    // Calculate real stats from _myEvents
+    final totalEvents = _myEvents.length;
+    final totalParticipants = _myEvents.fold<int>(
+      0,
+      (sum, event) => sum + event.participants.length,
+    );
+    
+    final now = DateTime.now();
+    final startOfMonth = DateTime(now.year, now.month, 1);
+    final eventsThisMonth = _myEvents.where((event) => 
+      event.date.isAfter(startOfMonth.subtract(const Duration(days: 1))) &&
+      event.date.isBefore(now.add(const Duration(days: 1)))
+    ).length;
+    
+    final pendingEvents = _myEvents.where((event) => 
+      event.status == EventStatus.draft || event.status == EventStatus.published
+    ).length;
+    
+    // Get recent events (last 5, sorted by date descending)
+    final recentEvents = List<Event>.from(_myEvents)
+      ..sort((a, b) => b.date.compareTo(a.date));
+    final displayEvents = recentEvents.take(5).toList();
+
+    return RefreshIndicator(
+      onRefresh: _refreshData,
+      child: SingleChildScrollView(
+        padding: const EdgeInsets.all(16.0),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            // Quick Stats
+            Row(
+              children: [
+                Expanded(
+                  child: _buildStatCard(
+                    'Total Events', 
+                    totalEvents.toString(), 
+                    Icons.event, 
+                    Colors.blue,
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: _buildStatCard(
+                    'Participants', 
+                    totalParticipants.toString(), 
+                    Icons.people, 
+                    Colors.green,
+                  ),
+                ),
+              ],
             ),
-          ),
-          const SizedBox(height: 16),
-          _buildEventCard(
-            'Tech Innovation Summit 2024',
-            'March 15, 2024 • 10:00 AM',
-            'Main Auditorium',
-            '245 participants',
-            'Active',
-            Colors.green,
-          ),
-          const SizedBox(height: 12),
-          _buildEventCard(
-            'Cultural Night 2024',
-            'March 20, 2024 • 7:00 PM',
-            'Cultural Center',
-            '180 participants',
-            'Completed',
-            Colors.blue,
-          ),
-          const SizedBox(height: 12),
-          _buildEventCard(
-            'Coding Workshop',
-            'March 25, 2024 • 2:00 PM',
-            'Computer Lab 3',
-            '45 participants',
-            'Pending',
-            Colors.orange,
-          ),
-        ],
+            const SizedBox(height: 12),
+            Row(
+              children: [
+                Expanded(
+                  child: _buildStatCard(
+                    'This Month', 
+                    eventsThisMonth.toString(), 
+                    Icons.calendar_month, 
+                    Colors.orange,
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: _buildStatCard(
+                    'Pending', 
+                    pendingEvents.toString(), 
+                    Icons.pending, 
+                    Colors.red,
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 24),
+            // Recent Events
+            const Text(
+              'Recent Events',
+              style: TextStyle(
+                fontSize: 20,
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+            const SizedBox(height: 16),
+            if (displayEvents.isEmpty)
+              const Padding(
+                padding: EdgeInsets.all(32.0),
+                child: Center(
+                  child: Text(
+                    'No events created yet.\nCreate your first event!',
+                    style: TextStyle(
+                      color: Colors.grey,
+                      fontSize: 16,
+                    ),
+                    textAlign: TextAlign.center,
+                  ),
+                ),
+              )
+            else
+              ...displayEvents.map((event) => Padding(
+                padding: const EdgeInsets.only(bottom: 12),
+                child: GestureDetector(
+                  onTap: () => _viewEventDetails(event),
+                  child: _buildEventCard(
+                    event.title,
+                    '${DateFormat('MMM d, y').format(event.date)} • ${event.time}',
+                    event.location,
+                    '${event.participants.length} participants',
+                    _getStatusText(event.status),
+                    _getStatusColor(event.status),
+                  ),
+                ),
+              )),
+          ],
+        ),
       ),
     );
   }
@@ -223,10 +321,18 @@ class _OrganizerDashboardState extends State<OrganizerDashboard> {
           const SizedBox(height: 32),
           ElevatedButton.icon(
             onPressed: () async {
+              // Get the current organizer ID
+              String? organizerId;
+              if (_currentUser != null) {
+                organizerId = _currentUser!.id;
+              } else if (widget.userId != null) {
+                organizerId = widget.userId;
+              }
+              
               final result = await Navigator.push(
                 context,
                 MaterialPageRoute(
-                  builder: (context) => const CreateEventScreen(),
+                  builder: (context) => CreateEventScreen(organizerId: organizerId),
                 ),
               );
               if (result == true) {
@@ -295,6 +401,9 @@ class _OrganizerDashboardState extends State<OrganizerDashboard> {
                             _getStatusColor(event.status),
                             onEdit: () => _editEvent(event),
                             onManage: () => _manageEvent(event),
+                            onViewDetails: () => _viewEventDetails(event),
+                            onDelete: () => _deleteEvent(event),
+                            onMarkDone: () => _markEventAsDone(event),
                           ),
                         );
                       },
@@ -311,14 +420,19 @@ class _OrganizerDashboardState extends State<OrganizerDashboard> {
       padding: const EdgeInsets.all(16.0),
       child: Column(
         children: [
-          const CircleAvatar(
+          CircleAvatar(
             radius: 50,
-            backgroundColor: Color(0xFF1976D2),
-            child: Icon(
-              Icons.person,
-              size: 50,
-              color: Colors.white,
-            ),
+            backgroundColor: const Color(0xFF1976D2),
+            backgroundImage: _currentUser?.profileImageUrl != null
+                ? NetworkImage(_currentUser!.profileImageUrl!)
+                : null,
+            child: _currentUser?.profileImageUrl == null
+                ? const Icon(
+                    Icons.person,
+                    size: 50,
+                    color: Colors.white,
+                  )
+                : null,
           ),
           const SizedBox(height: 16),
           Text(
@@ -329,7 +443,7 @@ class _OrganizerDashboardState extends State<OrganizerDashboard> {
             ),
           ),
           Text(
-            'Event Organizer',
+            _currentUser?.email ?? 'Event Organizer',
             style: const TextStyle(
               fontSize: 16,
               color: Colors.grey,
@@ -340,7 +454,9 @@ class _OrganizerDashboardState extends State<OrganizerDashboard> {
             final updated = await Navigator.push(
               context,
               MaterialPageRoute(
-                builder: (context) => const EditProfileScreen(),
+                builder: (context) => EditProfileScreen(
+                  userId: _currentUser?.id ?? widget.userId,
+                ),
               ),
             );
             if (updated == true) {
@@ -356,13 +472,16 @@ class _OrganizerDashboardState extends State<OrganizerDashboard> {
             width: double.infinity,
             child: ElevatedButton(
               onPressed: () async {
-                await FirebaseUserService.signOut();
+                // Clear user state
+                setState(() => _currentUser = null);
+                // Navigate to welcome screen
                 if (mounted) {
-                  Navigator.pushReplacement(
+                  Navigator.pushAndRemoveUntil(
                     context,
                     MaterialPageRoute(
                       builder: (context) => const WelcomeScreen(),
                     ),
+                    (route) => false,
                   );
                 }
               },
@@ -373,7 +492,7 @@ class _OrganizerDashboardState extends State<OrganizerDashboard> {
                 ),
               ),
               child: const Text(
-                'Sign Out',
+                'Logout',
                 style: TextStyle(
                   fontSize: 16,
                   fontWeight: FontWeight.w600,
@@ -523,6 +642,9 @@ class _OrganizerDashboardState extends State<OrganizerDashboard> {
     Color statusColor, {
     VoidCallback? onEdit,
     VoidCallback? onManage,
+    VoidCallback? onDelete,
+    VoidCallback? onMarkDone,
+    VoidCallback? onViewDetails,
   }) {
     return Card(
       elevation: 2,
@@ -559,6 +681,53 @@ class _OrganizerDashboardState extends State<OrganizerDashboard> {
                       fontWeight: FontWeight.w600,
                     ),
                   ),
+                ),
+                const SizedBox(width: 8),
+                // Menu button for additional actions
+                PopupMenuButton<String>(
+                  icon: const Icon(Icons.more_vert, color: Colors.grey, size: 20),
+                  onSelected: (value) {
+                    if (value == 'view' && onViewDetails != null) {
+                      onViewDetails();
+                    } else if (value == 'done' && onMarkDone != null) {
+                      onMarkDone();
+                    } else if (value == 'delete' && onDelete != null) {
+                      onDelete();
+                    }
+                  },
+                  itemBuilder: (context) => [
+                    const PopupMenuItem(
+                      value: 'view',
+                      child: Row(
+                        children: [
+                          Icon(Icons.visibility, size: 20),
+                          SizedBox(width: 8),
+                          Text('View Details'),
+                        ],
+                      ),
+                    ),
+                    if (status != 'Completed')
+                      const PopupMenuItem(
+                        value: 'done',
+                        child: Row(
+                          children: [
+                            Icon(Icons.check_circle, size: 20, color: Colors.orange),
+                            SizedBox(width: 8),
+                            Text('Mark as Done'),
+                          ],
+                        ),
+                      ),
+                    const PopupMenuItem(
+                      value: 'delete',
+                      child: Row(
+                        children: [
+                          Icon(Icons.delete, size: 20, color: Colors.red),
+                          SizedBox(width: 8),
+                          Text('Delete', style: TextStyle(color: Colors.red)),
+                        ],
+                      ),
+                    ),
+                  ],
                 ),
               ],
             ),
@@ -646,23 +815,6 @@ class _OrganizerDashboardState extends State<OrganizerDashboard> {
     );
   }
 
-  Widget _buildFormField(String label, String hint, IconData icon) {
-    return TextFormField(
-      decoration: InputDecoration(
-        labelText: label,
-        hintText: hint,
-        prefixIcon: Icon(icon),
-        border: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(12),
-        ),
-        focusedBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(12),
-          borderSide: const BorderSide(color: Color(0xFF1976D2), width: 2),
-        ),
-      ),
-    );
-  }
-
   Widget _buildProfileOption(String title, IconData icon, VoidCallback onTap) {
     return ListTile(
       leading: Icon(icon),
@@ -719,5 +871,166 @@ class _OrganizerDashboardState extends State<OrganizerDashboard> {
         builder: (context) => ManageParticipantsScreen(event: event),
       ),
     ).then((_) => _refreshData());
+  }
+
+  void _viewEventDetails(Event event) {
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (context) => EventDetailsScreen(
+          event: event,
+          isOrganizer: true,
+        ),
+      ),
+    ).then((result) {
+      // If event was deleted, refresh the data
+      if (result == true) {
+        _refreshData();
+      } else {
+        _refreshData();
+      }
+    });
+  }
+
+  Future<void> _deleteEvent(Event event) async {
+    // Show confirmation dialog
+    final confirm = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Delete Event'),
+        content: Text(
+          'Are you sure you want to delete "${event.title}"? This action cannot be undone.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Cancel'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(context, true),
+            style: TextButton.styleFrom(foregroundColor: Colors.red),
+            child: const Text('Delete'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirm != true) return;
+
+    // Show loading indicator
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (context) => const Center(child: CircularProgressIndicator()),
+    );
+
+    try {
+      final success = await FirebaseEventService.deleteEvent(event.id);
+      if (mounted) {
+        Navigator.pop(context); // Close loading dialog
+        if (success) {
+          // Immediately remove from local list as a fallback while stream updates
+          setState(() {
+            _myEvents = _myEvents.where((e) => e.id != event.id).toList();
+          });
+          
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Event deleted successfully.'),
+              backgroundColor: Colors.green,
+            ),
+          );
+          
+          // Stream should update automatically, but refresh as backup
+          _refreshData();
+        } else {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Failed to delete event. Please check your Firestore security rules and try again.'),
+              backgroundColor: Colors.red,
+              duration: Duration(seconds: 4),
+            ),
+          );
+        }
+      }
+    } catch (e) {
+      if (mounted) {
+        Navigator.pop(context); // Close loading dialog
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Error: ${e.toString()}'),
+            backgroundColor: Colors.red,
+            duration: const Duration(seconds: 4),
+          ),
+        );
+      }
+    }
+  }
+
+  Future<void> _markEventAsDone(Event event) async {
+    // Show confirmation dialog
+    final confirm = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Mark Event as Done'),
+        content: Text(
+          'Are you sure you want to mark "${event.title}" as completed?',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Cancel'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text('Mark as Done'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirm != true) return;
+
+    // Show loading indicator
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (context) => const Center(child: CircularProgressIndicator()),
+    );
+
+    try {
+      final success = await FirebaseEventService.markEventAsCompleted(event.id);
+      if (mounted) {
+        Navigator.pop(context); // Close loading dialog
+        if (success) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Event marked as completed!'),
+              backgroundColor: Colors.green,
+            ),
+          );
+          _refreshData();
+        } else {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Failed to update event status. Please check your Firestore security rules and try again.'),
+              backgroundColor: Colors.red,
+              duration: Duration(seconds: 4),
+            ),
+          );
+        }
+      }
+    } catch (e) {
+      if (mounted) {
+        Navigator.pop(context); // Close loading dialog
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Error: ${e.toString()}'),
+            backgroundColor: Colors.red,
+            duration: const Duration(seconds: 4),
+          ),
+        );
+      }
+    }
   }
 }

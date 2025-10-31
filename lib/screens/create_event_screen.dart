@@ -1,14 +1,19 @@
+import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:uuid/uuid.dart';
 import 'package:intl/intl.dart';
+import 'package:image_picker/image_picker.dart';
 import '../models/event.dart';
 import '../models/user.dart';
 import '../services/firebase_event_service.dart';
 import '../services/firebase_user_service.dart';
+import '../services/firebase_storage_service.dart';
 import '../widgets/custom_text_field.dart';
 
 class CreateEventScreen extends StatefulWidget {
-  const CreateEventScreen({super.key});
+  final String? organizerId;
+  
+  const CreateEventScreen({super.key, this.organizerId});
 
   @override
   State<CreateEventScreen> createState() => _CreateEventScreenState();
@@ -26,6 +31,8 @@ class _CreateEventScreenState extends State<CreateEventScreen> {
   String _selectedCategory = 'Seminars';
   bool _isLoading = false;
   User? _currentUser;
+  XFile? _selectedImage;
+  String? _imageUrl;
 
   final List<String> _categories = [
     'Seminars',
@@ -81,6 +88,43 @@ class _CreateEventScreenState extends State<CreateEventScreen> {
     }
   }
 
+  Future<void> _pickImage() async {
+    final source = await showDialog<ImageSource>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Select Image Source'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            ListTile(
+              leading: const Icon(Icons.photo_library),
+              title: const Text('Gallery'),
+              onTap: () => Navigator.pop(context, ImageSource.gallery),
+            ),
+            ListTile(
+              leading: const Icon(Icons.camera_alt),
+              title: const Text('Camera'),
+              onTap: () => Navigator.pop(context, ImageSource.camera),
+            ),
+          ],
+        ),
+      ),
+    );
+
+    if (source != null) {
+      final picker = ImagePicker();
+      final picked = await picker.pickImage(
+        source: source,
+        maxWidth: 1024,
+        maxHeight: 1024,
+        imageQuality: 80,
+      );
+      if (picked != null) {
+        setState(() => _selectedImage = picked);
+      }
+    }
+  }
+
   Future<void> _createEvent() async {
     if (!_formKey.currentState!.validate() || _selectedDate == null) {
       if (_selectedDate == null) {
@@ -94,51 +138,153 @@ class _CreateEventScreenState extends State<CreateEventScreen> {
       return;
     }
 
-    if (_currentUser == null) return;
+    // Prevent multiple clicks
+    if (_isLoading) return;
 
     setState(() => _isLoading = true);
 
     try {
+      // Determine organizer ID: use passed organizerId, or current user, or create guest
+      String organizerId;
+      
+      // Priority 1: Use organizerId passed from parent (dashboard)
+      if (widget.organizerId != null) {
+        organizerId = widget.organizerId!;
+        print('Using organizerId from parent: $organizerId');
+      }
+      // Priority 2: Use current user if available
+      else if (_currentUser != null) {
+        organizerId = _currentUser!.id;
+        print('Using current user ID: $organizerId');
+      }
+      // Priority 3: Create guest organizer
+      else {
+        print('Creating guest organizer user...');
+        organizerId = 'guest_organizer';
+        final guestUser = User(
+          id: 'guest_organizer',
+          email: 'guest@eventbridge.com',
+          name: 'Guest Organizer',
+          universityId: 'GUEST001',
+          type: UserType.organizer,
+          createdAt: DateTime.now(),
+        );
+        await FirebaseUserService.createUser(guestUser).timeout(
+          const Duration(seconds: 10),
+          onTimeout: () {
+            throw Exception('Timeout creating guest user');
+          },
+        );
+        organizerId = guestUser.id;
+        print('Guest organizer created: $organizerId');
+      }
+
+      // Generate event ID first so we can use it for image upload
+      final eventId = const Uuid().v4();
+      print('Generated event ID: $eventId');
+      String? imageUrl;
+      
+      // Upload image if selected (use the same event ID) with timeout
+      if (_selectedImage != null) {
+        print('Uploading event image...');
+        try {
+          imageUrl = await FirebaseStorageService.uploadEventImage(eventId, _selectedImage!)
+              .timeout(
+            const Duration(seconds: 30),
+            onTimeout: () {
+              print('Image upload timed out');
+              return null; // Continue without image
+            },
+          );
+          print('Image upload result: $imageUrl');
+        } catch (e) {
+          print('Image upload error (continuing anyway): $e');
+          imageUrl = null; // Continue without image
+        }
+      }
+
       final event = Event(
-        id: const Uuid().v4(),
+        id: eventId,
         title: _titleController.text.trim(),
         description: _descriptionController.text.trim(),
         date: _selectedDate!,
         time: _timeController.text.trim(),
         location: _locationController.text.trim(),
         category: _selectedCategory,
-        organizerId: _currentUser!.id,
+        organizerId: organizerId,
         maxParticipants: int.tryParse(_maxParticipantsController.text) ?? 100,
         status: EventStatus.published,
+        imageUrl: imageUrl,
       );
 
-      final success = await FirebaseEventService.createEvent(event);
+      print('Creating event in Firestore: ${event.id}');
+      print('Organizer ID: $organizerId');
       
-      if (success) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Event created successfully!'),
-            backgroundColor: Colors.green,
-          ),
-        );
-        Navigator.pop(context, true); // Return true to indicate success
-      } else {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Failed to create event. Please try again.'),
-            backgroundColor: Colors.red,
-          ),
-        );
+      // Add timeout to Firestore write
+      await FirebaseEventService.createEvent(event).timeout(
+        const Duration(seconds: 15),
+        onTimeout: () {
+          throw Exception('Firestore write timeout. Please check your connection and security rules.');
+        },
+      );
+      
+      print('Event created successfully in Firestore');
+      
+      if (!mounted) {
+        setState(() => _isLoading = false);
+        return;
       }
-    } catch (e) {
+      
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-          content: Text('An error occurred. Please try again.'),
+          content: Text('Event created successfully!'),
+          backgroundColor: Colors.green,
+          duration: Duration(seconds: 2),
+        ),
+      );
+      
+      // Small delay to show success message
+      await Future.delayed(const Duration(milliseconds: 500));
+      
+      if (mounted) {
+        Navigator.pop(context, true); // Return true to indicate success
+      }
+    } catch (e, stackTrace) {
+      print('=== ERROR CREATING EVENT ===');
+      print('Error: $e');
+      print('Error type: ${e.runtimeType}');
+      print('Stack trace: $stackTrace');
+      print('===========================');
+      
+      if (!mounted) {
+        return;
+      }
+      
+      String errorMessage = 'An error occurred while creating the event.';
+      final errorString = e.toString().toLowerCase();
+      
+      if (errorString.contains('permission') || errorString.contains('permission-denied')) {
+        errorMessage = 'Permission denied. Please check your Firestore security rules in Firebase Console.';
+      } else if (errorString.contains('unavailable')) {
+        errorMessage = 'Firestore is unavailable. Please check your internet connection.';
+      } else if (errorString.contains('timeout')) {
+        errorMessage = 'Request timed out. Please check your connection and try again.';
+      } else {
+        errorMessage = 'Error: ${e.toString().replaceFirst('Exception: ', '').replaceFirst('Firestore error: ', '')}';
+      }
+      
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(errorMessage),
           backgroundColor: Colors.red,
+          duration: const Duration(seconds: 5),
         ),
       );
     } finally {
-      setState(() => _isLoading = false);
+      print('Finally block - resetting loading state');
+      if (mounted) {
+        setState(() => _isLoading = false);
+      }
     }
   }
 
@@ -175,6 +321,31 @@ class _CreateEventScreenState extends State<CreateEventScreen> {
                 ),
               ),
               const SizedBox(height: 24),
+              
+              // Event Image
+              GestureDetector(
+                onTap: _pickImage,
+                child: Container(
+                  width: double.infinity,
+                  height: 200,
+                  decoration: BoxDecoration(
+                    color: Colors.grey[200],
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(color: Colors.grey[300]!),
+                  ),
+                  child: _selectedImage != null
+                      ? ClipRRect(
+                          borderRadius: BorderRadius.circular(12),
+                          child: Image.file(
+                            File(_selectedImage!.path),
+                            fit: BoxFit.cover,
+                            errorBuilder: (context, error, stackTrace) => _buildImagePlaceholder(),
+                          ),
+                        )
+                      : _buildImagePlaceholder(),
+                ),
+              ),
+              const SizedBox(height: 16),
               
               // Event Title
               CustomTextField(
@@ -332,6 +503,19 @@ class _CreateEventScreenState extends State<CreateEventScreen> {
             ],
           ),
         ),
+      ),
+    );
+  }
+
+  Widget _buildImagePlaceholder() {
+    return const Center(
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Icon(Icons.add_photo_alternate, size: 48, color: Colors.grey),
+          SizedBox(height: 8),
+          Text('Tap to add event image', style: TextStyle(color: Colors.grey)),
+        ],
       ),
     );
   }

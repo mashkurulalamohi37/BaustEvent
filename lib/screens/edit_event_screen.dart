@@ -1,10 +1,13 @@
+import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:uuid/uuid.dart';
 import 'package:intl/intl.dart';
+import 'package:image_picker/image_picker.dart';
 import '../models/event.dart';
 import '../models/user.dart';
 import '../services/firebase_event_service.dart';
 import '../services/firebase_user_service.dart';
+import '../services/firebase_storage_service.dart';
 import '../widgets/custom_text_field.dart';
 
 class EditEventScreen extends StatefulWidget {
@@ -29,6 +32,8 @@ class _EditEventScreenState extends State<EditEventScreen> {
   EventStatus _selectedStatus = EventStatus.published;
   bool _isLoading = false;
   User? _currentUser;
+  XFile? _selectedImage;
+  String? _currentImageUrl;
 
   final List<String> _categories = [
     'Seminars',
@@ -56,6 +61,47 @@ class _EditEventScreenState extends State<EditEventScreen> {
     _selectedDate = event.date;
     _selectedCategory = event.category;
     _selectedStatus = event.status;
+    _currentImageUrl = event.imageUrl;
+  }
+
+  Future<void> _pickImage() async {
+    final source = await showDialog<ImageSource>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Select Image Source'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            ListTile(
+              leading: const Icon(Icons.photo_library),
+              title: const Text('Gallery'),
+              onTap: () => Navigator.pop(context, ImageSource.gallery),
+            ),
+            ListTile(
+              leading: const Icon(Icons.camera_alt),
+              title: const Text('Camera'),
+              onTap: () => Navigator.pop(context, ImageSource.camera),
+            ),
+          ],
+        ),
+      ),
+    );
+
+    if (source != null) {
+      final picker = ImagePicker();
+      final picked = await picker.pickImage(
+        source: source,
+        maxWidth: 1024,
+        maxHeight: 1024,
+        imageQuality: 80,
+      );
+      if (picked != null) {
+        setState(() {
+          _selectedImage = picked;
+          _currentImageUrl = null; // Clear old URL when new image is selected
+        });
+      }
+    }
   }
 
   Future<void> _loadUser() async {
@@ -113,6 +159,13 @@ class _EditEventScreenState extends State<EditEventScreen> {
     setState(() => _isLoading = true);
 
     try {
+      String? imageUrl = _currentImageUrl;
+      
+      // Upload new image if selected
+      if (_selectedImage != null) {
+        imageUrl = await FirebaseStorageService.uploadEventImage(widget.event.id, _selectedImage!);
+      }
+
       final updatedEvent = widget.event.copyWith(
         title: _titleController.text.trim(),
         description: _descriptionController.text.trim(),
@@ -122,6 +175,7 @@ class _EditEventScreenState extends State<EditEventScreen> {
         category: _selectedCategory,
         maxParticipants: int.tryParse(_maxParticipantsController.text) ?? 100,
         status: _selectedStatus,
+        imageUrl: imageUrl,
       );
 
       final success = await FirebaseEventService.updateEvent(updatedEvent);
@@ -187,6 +241,40 @@ class _EditEventScreenState extends State<EditEventScreen> {
                 ),
               ),
               const SizedBox(height: 24),
+              
+              // Event Image
+              GestureDetector(
+                onTap: _pickImage,
+                child: Container(
+                  width: double.infinity,
+                  height: 200,
+                  decoration: BoxDecoration(
+                    color: Colors.grey[200],
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(color: Colors.grey[300]!),
+                  ),
+                  child: _selectedImage != null
+                      ? ClipRRect(
+                          borderRadius: BorderRadius.circular(12),
+                          child: Image.file(
+                            File(_selectedImage!.path),
+                            fit: BoxFit.cover,
+                            errorBuilder: (context, error, stackTrace) => _buildImagePlaceholder(),
+                          ),
+                        )
+                      : _currentImageUrl != null
+                          ? ClipRRect(
+                              borderRadius: BorderRadius.circular(12),
+                              child: Image.network(
+                                _currentImageUrl!,
+                                fit: BoxFit.cover,
+                                errorBuilder: (context, error, stackTrace) => _buildImagePlaceholder(),
+                              ),
+                            )
+                          : _buildImagePlaceholder(),
+                ),
+              ),
+              const SizedBox(height: 16),
               
               // Event Title
               CustomTextField(
@@ -387,5 +475,18 @@ class _EditEventScreenState extends State<EditEventScreen> {
       case EventStatus.cancelled:
         return 'Cancelled';
     }
+  }
+
+  Widget _buildImagePlaceholder() {
+    return const Center(
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Icon(Icons.add_photo_alternate, size: 48, color: Colors.grey),
+          SizedBox(height: 8),
+          Text('Tap to add/edit event image', style: TextStyle(color: Colors.grey)),
+        ],
+      ),
+    );
   }
 }

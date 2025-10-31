@@ -1,7 +1,8 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
-import 'welcome_screen.dart';
 import 'event_details_screen.dart';
+import 'welcome_screen.dart';
 import '../models/event.dart';
 import '../models/user.dart';
 import '../services/firebase_event_service.dart';
@@ -11,7 +12,9 @@ import '../widgets/category_card.dart';
 import 'edit_profile_screen.dart';
 
 class ParticipantDashboard extends StatefulWidget {
-  const ParticipantDashboard({super.key});
+  final String? userId;
+  
+  const ParticipantDashboard({super.key, this.userId});
 
   @override
   State<ParticipantDashboard> createState() => _ParticipantDashboardState();
@@ -38,19 +41,96 @@ class _ParticipantDashboardState extends State<ParticipantDashboard> {
     await _loadData();
   }
 
+  StreamSubscription<List<Event>>? _eventsSubscription;
+  StreamSubscription<List<Event>>? _myEventsSubscription;
+
+  @override
+  void dispose() {
+    _searchController.dispose();
+    _eventsSubscription?.cancel();
+    _myEventsSubscription?.cancel();
+    super.dispose();
+  }
+
   Future<void> _loadData() async {
     setState(() => _isLoading = true);
     
     try {
-      final user = await FirebaseUserService.getCurrentUserWithDetails();
-      final events = await FirebaseEventService.getAllEvents();
-      final myEvents = user != null ? await FirebaseEventService.getUserEvents(user.id) : <Event>[];
+      User? user;
+      
+      // If userId is provided, fetch user details
+      if (widget.userId != null) {
+        user = await FirebaseUserService.getUserById(widget.userId!);
+      } else {
+        user = await FirebaseUserService.getCurrentUserWithDetails();
+      }
+      
+      // Determine user ID for events - prioritize widget.userId since it's from auth
+      String userId;
+      if (widget.userId != null) {
+        userId = widget.userId!;
+      } else if (user != null) {
+        userId = user.id;
+      } else {
+        userId = 'guest_participant';
+      }
+      
+      print('Setting up streams for userId: $userId');
+      
+      // Use real-time stream for all events
+      _eventsSubscription?.cancel();
+      _eventsSubscription = FirebaseEventService.getAllEventsStream().listen(
+        (events) {
+          if (mounted) {
+            print('All events stream updated: ${events.length} events');
+            setState(() {
+              _allEvents = events;
+              _filteredEvents = _selectedCategory.isEmpty 
+                  ? events 
+                  : events.where((e) => e.category == _selectedCategory).toList();
+            });
+          }
+        },
+        onError: (error) {
+          print('Error in all events stream: $error');
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(
+                content: Text('Error loading events: $error'),
+                backgroundColor: Colors.red,
+              ),
+            );
+          }
+        },
+      );
+
+      // Use real-time stream for user's registered events
+      _myEventsSubscription?.cancel();
+      _myEventsSubscription = FirebaseEventService.getUserEventsStream(userId).listen(
+        (myEvents) {
+          if (mounted) {
+            print('My events stream updated: ${myEvents.length} events for userId: $userId');
+            print('Event IDs: ${myEvents.map((e) => e.id).toList()}');
+            setState(() {
+              _myEvents = myEvents;
+            });
+          }
+        },
+        onError: (error) {
+          print('Error in my events stream: $error');
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(
+                content: Text('Error loading your events: $error'),
+                backgroundColor: Colors.red,
+              ),
+            );
+          }
+        },
+      );
       
       setState(() {
         _currentUser = user;
-        _allEvents = events;
-        _filteredEvents = events;
-        _myEvents = myEvents;
         _isLoading = false;
       });
     } catch (e) {
@@ -83,24 +163,97 @@ class _ParticipantDashboardState extends State<ParticipantDashboard> {
     await _loadData();
   }
 
+  // Check if current user is a guest
+  bool _isGuestUser() {
+    // If no userId was passed from auth screen, user is a guest
+    if (widget.userId == null) {
+      return true;
+    }
+    // If current user exists and is a guest user
+    if (_currentUser != null) {
+      return _currentUser!.email == 'guest@eventbridge.com' || 
+             _currentUser!.id.startsWith('guest_');
+    }
+    return false;
+  }
+
   Future<void> _registerForEvent(Event event) async {
+    // Prevent guest users from registering
+    if (_isGuestUser()) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: const Text('Please log in or sign up to register for events.'),
+          backgroundColor: Colors.orange,
+          action: SnackBarAction(
+            label: 'Login',
+            textColor: Colors.white,
+            onPressed: () {
+              Navigator.pushReplacement(
+                context,
+                MaterialPageRoute(
+                  builder: (context) => const WelcomeScreen(),
+                ),
+              );
+            },
+          ),
+        ),
+      );
+      return;
+    }
+
+    // Ensure we have a valid logged-in user
+    if (_currentUser == null && widget.userId != null) {
+      // Try to load user
+      final user = await FirebaseUserService.getUserById(widget.userId!);
+      if (user == null) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Please log in to register for events.'),
+            backgroundColor: Colors.red,
+          ),
+        );
+        return;
+      }
+      setState(() => _currentUser = user);
+    }
+
     if (_currentUser == null) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-          content: Text('Please log in to register for events'),
+          content: Text('Please log in to register for events.'),
           backgroundColor: Colors.red,
         ),
       );
       return;
     }
 
-    final alreadyRegistered = event.participants.contains(_currentUser!.id);
+    // Use widget.userId if available, otherwise use currentUser.id
+    String userId;
+    if (widget.userId != null) {
+      userId = widget.userId!;
+    } else {
+      userId = _currentUser!.id;
+    }
+    
+    print('Registering for event: ${event.id} with userId: $userId');
+    
+    final alreadyRegistered = event.participants.contains(userId);
     if (alreadyRegistered) {
+      print('User already registered for this event');
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('You are already registered for this event.'),
+          backgroundColor: Colors.orange,
+          duration: Duration(seconds: 2),
+        ),
+      );
       _navigateToEventDetails(event);
       return;
     }
 
-    final success = await FirebaseEventService.registerForEvent(event.id, _currentUser!.id);
+    final success = await FirebaseEventService.registerForEvent(event.id, userId);
+    print('Registration result: $success');
+    
     if (success) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
@@ -108,11 +261,12 @@ class _ParticipantDashboardState extends State<ParticipantDashboard> {
           backgroundColor: Colors.green,
         ),
       );
-      // Load the updated event so EventDetails can show QR immediately
-      final updatedEvents = await FirebaseEventService.getAllEvents();
-      final updated = updatedEvents.firstWhere((e) => e.id == event.id, orElse: () => event);
+      // The stream should automatically update _myEvents, but we can also manually refresh
+      // Wait a moment for Firestore to propagate the change
+      await Future.delayed(const Duration(milliseconds: 500));
+      // Navigate to event details - the stream will update the list automatically
+      final updated = _allEvents.where((e) => e.id == event.id).firstOrNull ?? event;
       _navigateToEventDetails(updated);
-      await _refreshData();
     } else {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
@@ -123,11 +277,6 @@ class _ParticipantDashboardState extends State<ParticipantDashboard> {
     }
   }
 
-  @override
-  void dispose() {
-    _searchController.dispose();
-    super.dispose();
-  }
 
   @override
   Widget build(BuildContext context) {
@@ -145,7 +294,9 @@ class _ParticipantDashboardState extends State<ParticipantDashboard> {
               final updated = await Navigator.push(
                 context,
                 MaterialPageRoute(
-                  builder: (context) => const EditProfileScreen(),
+                  builder: (context) => EditProfileScreen(
+                    userId: _currentUser?.id ?? widget.userId,
+                  ),
                 ),
               );
               if (updated == true) {
@@ -315,21 +466,34 @@ class _ParticipantDashboardState extends State<ParticipantDashboard> {
                 ),
               )
             else
-              ..._filteredEvents.map((event) => Padding(
-                padding: const EdgeInsets.only(bottom: 12),
-                child: EventCard(
-                  title: event.title,
-                  description: event.description,
-                  date: DateFormat('MMM d, y').format(event.date),
-                  time: event.time,
-                  location: event.location,
-                  icon: _getCategoryIcon(event.category),
-                  color: _getCategoryColor(event.category),
-                  onTap: () => _navigateToEventDetails(event),
-                  onRegister: () => _registerForEvent(event),
-                  onFavorite: () => _toggleFavorite(event),
-                ),
-              )),
+              ..._filteredEvents.map((event) {
+                // Check if user is registered for this event
+                String? userId;
+                if (widget.userId != null) {
+                  userId = widget.userId;
+                } else if (_currentUser != null) {
+                  userId = _currentUser!.id;
+                }
+                final isRegistered = userId != null && event.participants.contains(userId);
+                
+                return Padding(
+                  padding: const EdgeInsets.only(bottom: 12),
+                  child: EventCard(
+                    title: event.title,
+                    description: event.description,
+                    date: DateFormat('MMM d, y').format(event.date),
+                    time: event.time,
+                    location: event.location,
+                    icon: _getCategoryIcon(event.category),
+                    color: _getCategoryColor(event.category),
+                    onTap: () => _navigateToEventDetails(event),
+                    onRegister: () => _registerForEvent(event),
+                    onFavorite: () => _toggleFavorite(event),
+                    isRegistered: isRegistered,
+                    imageUrl: event.imageUrl,
+                  ),
+                );
+              }),
           ],
         ),
       ),
@@ -381,6 +545,15 @@ class _ParticipantDashboardState extends State<ParticipantDashboard> {
                     itemCount: _filteredEvents.length,
                     itemBuilder: (context, index) {
                       final event = _filteredEvents[index];
+                      // Check if user is registered for this event
+                      String? userId;
+                      if (widget.userId != null) {
+                        userId = widget.userId;
+                      } else if (_currentUser != null) {
+                        userId = _currentUser!.id;
+                      }
+                      final isRegistered = userId != null && event.participants.contains(userId);
+                      
                       return Padding(
                         padding: const EdgeInsets.only(bottom: 12),
                         child: EventCard(
@@ -394,6 +567,7 @@ class _ParticipantDashboardState extends State<ParticipantDashboard> {
                           onTap: () => _navigateToEventDetails(event),
                           onRegister: () => _registerForEvent(event),
                           onFavorite: () => _toggleFavorite(event),
+                          isRegistered: isRegistered,
                         ),
                       );
                     },
@@ -464,7 +638,9 @@ class _ParticipantDashboardState extends State<ParticipantDashboard> {
           CircleAvatar(
             radius: 50,
             backgroundColor: const Color(0xFF1976D2),
-            backgroundImage: _buildProfileImageProvider(),
+            backgroundImage: _currentUser?.profileImageUrl != null
+                ? NetworkImage(_currentUser!.profileImageUrl!)
+                : null,
             child: _currentUser?.profileImageUrl == null
                 ? const Icon(
                     Icons.person,
@@ -482,18 +658,31 @@ class _ParticipantDashboardState extends State<ParticipantDashboard> {
             ),
           ),
           Text(
-            'ID: ${_currentUser?.universityId ?? 'N/A'}',
+            _currentUser?.email ?? (_currentUser?.universityId != null ? 'ID: ${_currentUser!.universityId}' : 'Guest User'),
             style: const TextStyle(
               fontSize: 16,
               color: Colors.grey,
             ),
           ),
+          if (_currentUser?.universityId != null && _currentUser?.email != null)
+            Padding(
+              padding: const EdgeInsets.only(top: 4),
+              child: Text(
+                'ID: ${_currentUser!.universityId}',
+                style: const TextStyle(
+                  fontSize: 14,
+                  color: Colors.grey,
+                ),
+              ),
+            ),
           const SizedBox(height: 32),
           _buildProfileOption('Edit Profile', Icons.edit, () async {
             final updated = await Navigator.push(
               context,
               MaterialPageRoute(
-                builder: (context) => const EditProfileScreen(),
+                builder: (context) => EditProfileScreen(
+                  userId: _currentUser?.id ?? widget.userId,
+                ),
               ),
             );
             if (updated == true) {
@@ -508,13 +697,16 @@ class _ParticipantDashboardState extends State<ParticipantDashboard> {
             width: double.infinity,
             child: ElevatedButton(
               onPressed: () async {
-                await FirebaseUserService.signOut();
+                // Clear user state
+                setState(() => _currentUser = null);
+                // Navigate to welcome screen
                 if (mounted) {
-                  Navigator.pushReplacement(
+                  Navigator.pushAndRemoveUntil(
                     context,
                     MaterialPageRoute(
                       builder: (context) => const WelcomeScreen(),
                     ),
+                    (route) => false,
                   );
                 }
               },
@@ -525,7 +717,7 @@ class _ParticipantDashboardState extends State<ParticipantDashboard> {
                 ),
               ),
               child: const Text(
-                'Sign Out',
+                'Logout',
                 style: TextStyle(
                   fontSize: 16,
                   fontWeight: FontWeight.w600,
@@ -761,14 +953,6 @@ class _ParticipantDashboardState extends State<ParticipantDashboard> {
     );
   }
 
-  ImageProvider? _buildProfileImageProvider() {
-    final url = _currentUser?.profileImageUrl;
-    if (url == null || url.isEmpty) return null;
-    if (url.startsWith('http://') || url.startsWith('https://')) {
-      return NetworkImage(url);
-    }
-    return AssetImage(url);
-  }
 
   // Helper methods
   IconData _getCategoryIcon(String category) {
@@ -808,6 +992,7 @@ class _ParticipantDashboardState extends State<ParticipantDashboard> {
         builder: (context) => EventDetailsScreen(
           event: event,
           isOrganizer: false,
+          userId: widget.userId,
         ),
       ),
     ).then((_) => _refreshData());

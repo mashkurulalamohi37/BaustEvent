@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'screens/welcome_screen.dart';
-import 'services/firebase_user_service.dart';
 
 class LoadingScreen extends StatelessWidget {
   const LoadingScreen({super.key});
@@ -56,9 +55,6 @@ void main() async {
   try {
     // Initialize Firebase
     await Firebase.initializeApp();
-    
-    // Ensure Firestore profile exists for already signed-in users
-    await FirebaseUserService.ensureCurrentUserDocument();
   } catch (e) {
     print('Firebase initialization failed: $e');
   }
