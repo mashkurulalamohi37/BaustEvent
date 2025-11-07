@@ -2,6 +2,7 @@
 enum UserType {
   participant,
   organizer,
+  admin,
 }
 
 class User {
@@ -60,6 +61,7 @@ class User {
   // Role helpers
   bool get isOrganizer => type == UserType.organizer;
   bool get isParticipant => type == UserType.participant;
+  bool get isAdmin => type == UserType.admin;
 
   // Equality and diagnostics
   @override

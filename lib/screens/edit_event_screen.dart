@@ -41,6 +41,8 @@ class _EditEventScreenState extends State<EditEventScreen> {
     'Cultural',
     'Competitions',
     'Conferences',
+    'Rag Day',
+    'Picnic',
     'Other',
   ];
 

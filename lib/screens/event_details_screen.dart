@@ -123,6 +123,19 @@ class _EventDetailsScreenState extends State<EventDetailsScreen> {
       }
     }
 
+    // Prevent admins from registering for events
+    if (_currentUser!.isAdmin && !_isRegistered) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Admins cannot register for events. Admins can only manage and view events.'),
+          backgroundColor: Colors.orange,
+          duration: Duration(seconds: 3),
+        ),
+      );
+      setState(() => _isLoading = false);
+      return;
+    }
+
     // Use widget.userId if available, otherwise use currentUser.id
     String userId;
     if (widget.userId != null) {
@@ -479,32 +492,8 @@ class _EventDetailsScreenState extends State<EventDetailsScreen> {
             const SizedBox(height: 24),
             
             // Action Buttons
-            if (!widget.isOrganizer) ...[
-              SizedBox(
-                width: double.infinity,
-                height: 56,
-                child: ElevatedButton(
-                  onPressed: _isLoading ? null : _toggleRegistration,
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: _isRegistered ? Colors.red : const Color(0xFF1976D2),
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                  ),
-                  child: _isLoading
-                      ? const CircularProgressIndicator(color: Colors.white)
-                      : Text(
-                          _isRegistered ? 'Unregister' : 'Register',
-                          style: const TextStyle(
-                            fontSize: 18,
-                            fontWeight: FontWeight.w600,
-                            color: Colors.white,
-                          ),
-                        ),
-                ),
-              ),
-            ] else ...[
-              // Organizer actions
+            if (widget.isOrganizer || (_currentUser?.isAdmin ?? false)) ...[
+              // Organizer/Admin actions
               Row(
                 children: [
                   Expanded(
@@ -547,6 +536,31 @@ class _EventDetailsScreenState extends State<EventDetailsScreen> {
                     ),
                   ),
                 ],
+              ),
+            ] else ...[
+              // Participant actions
+              SizedBox(
+                width: double.infinity,
+                height: 56,
+                child: ElevatedButton(
+                  onPressed: _isLoading ? null : _toggleRegistration,
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: _isRegistered ? Colors.red : const Color(0xFF1976D2),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                  ),
+                  child: _isLoading
+                      ? const CircularProgressIndicator(color: Colors.white)
+                      : Text(
+                          _isRegistered ? 'Unregister' : 'Register',
+                          style: const TextStyle(
+                            fontSize: 18,
+                            fontWeight: FontWeight.w600,
+                            color: Colors.white,
+                          ),
+                        ),
+                ),
               ),
               const SizedBox(height: 12),
               Row(
@@ -663,4 +677,5 @@ class _EventDetailsScreenState extends State<EventDetailsScreen> {
         return 'Cancelled';
     }
   }
+
 }

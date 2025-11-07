@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'event_details_screen.dart';
 import 'welcome_screen.dart';
 import 'create_event_screen.dart';
@@ -10,7 +11,10 @@ import '../models/event.dart';
 import '../models/user.dart';
 import '../services/firebase_event_service.dart';
 import '../services/firebase_user_service.dart';
+import '../services/firebase_notification_service.dart';
 import 'edit_profile_screen.dart';
+import 'analytics_screen.dart';
+import 'notifications_screen.dart';
 
 class OrganizerDashboard extends StatefulWidget {
   final String? userId;
@@ -28,24 +32,31 @@ class _OrganizerDashboardState extends State<OrganizerDashboard> {
   User? _currentUser;
   bool _isLoading = true;
   StreamSubscription<List<Event>>? _eventsSubscription;
+  StreamSubscription<QuerySnapshot>? _notificationSubscription;
+  Set<String> _shownNotificationIds = {}; // Track which notifications we've already shown
 
   @override
   void initState() {
     super.initState();
+    print('=== ORGANIZER DASHBOARD INITIALIZED ===');
+    print('Widget userId: ${widget.userId}');
     _initializeData();
   }
 
   Future<void> _initializeData() async {
+    print('Initializing organizer dashboard data...');
     await _loadData();
   }
 
   @override
   void dispose() {
     _eventsSubscription?.cancel();
+    _notificationSubscription?.cancel();
     super.dispose();
   }
 
   Future<void> _loadData() async {
+    print('_loadData() called');
     setState(() => _isLoading = true);
     
     try {
@@ -53,9 +64,13 @@ class _OrganizerDashboardState extends State<OrganizerDashboard> {
       
       // If userId is provided, fetch user details
       if (widget.userId != null) {
+        print('Fetching user by ID: ${widget.userId}');
         user = await FirebaseUserService.getUserById(widget.userId!);
+        print('User fetched: ${user?.id}, email: ${user?.email}');
       } else {
+        print('Fetching current user');
         user = await FirebaseUserService.getCurrentUserWithDetails();
+        print('Current user: ${user?.id}, email: ${user?.email}');
       }
       
       // Determine organizer ID
@@ -69,16 +84,91 @@ class _OrganizerDashboardState extends State<OrganizerDashboard> {
       }
       
       // Use real-time stream for organizer events
+      print('=== LOADING ORGANIZER EVENTS ===');
+      print('User ID: ${user?.id}');
+      print('Widget userId: ${widget.userId}');
+      print('Organizer ID being used: $organizerId');
+      print('User email: ${user?.email}');
+      print('User name: ${user?.name}');
+      
+      // Debug: Check all events to see what organizerIds exist
+      try {
+        print('Fetching ALL events from database...');
+        final allEvents = await FirebaseEventService.getAllEvents();
+        print('Total events in database: ${allEvents.length}');
+        if (allEvents.isNotEmpty) {
+          print('Sample organizerIds from all events:');
+          final organizerIds = <String>{};
+          for (var event in allEvents) {
+            organizerIds.add(event.organizerId);
+            if (organizerIds.length <= 5) {
+              print('  Event "${event.title}": organizerId = "${event.organizerId}"');
+            }
+          }
+          print('All unique organizerIds in database: ${organizerIds.toList()}');
+          print('Looking for organizerId: "$organizerId"');
+          if (!organizerIds.contains(organizerId)) {
+            print('⚠️ WARNING: Your organizerId "$organizerId" does NOT match any events!');
+            print('Available organizerIds: ${organizerIds.toList()}');
+          }
+        } else {
+          print('⚠️ No events exist in the database at all!');
+        }
+      } catch (e) {
+        print('Error checking all events: $e');
+      }
+      
       _eventsSubscription?.cancel();
+      
+      // Also fetch events immediately to avoid waiting for stream
+      try {
+        print('Fetching events for organizerId: "$organizerId"');
+        final initialEvents = await FirebaseEventService.getEventsByOrganizer(organizerId);
+        print('Initial events loaded: ${initialEvents.length} events');
+        if (initialEvents.isNotEmpty) {
+          print('Event titles: ${initialEvents.map((e) => e.title).toList()}');
+        } else {
+          print('⚠️ WARNING: No events found for organizerId: "$organizerId"');
+          print('This could mean:');
+          print('  1. You haven\'t created any events yet');
+          print('  2. Events were created with a different organizerId');
+          print('  3. Events were deleted');
+        }
+        if (mounted) {
+          setState(() {
+            _myEvents = initialEvents;
+            _currentUser = user;
+            _isLoading = false;
+          });
+          print('State updated: _myEvents.length = ${_myEvents.length}');
+        }
+      } catch (e, stackTrace) {
+        print('❌ Error loading initial events: $e');
+        print('Stack trace: $stackTrace');
+        if (mounted) {
+          setState(() {
+            _currentUser = user;
+            _isLoading = false;
+          });
+        }
+      }
+      
+      // Set up stream for real-time updates
+      print('Setting up stream for organizerId: "$organizerId"');
       _eventsSubscription = FirebaseEventService.getEventsByOrganizerStream(organizerId).listen(
         (events) {
           if (mounted) {
-            print('Organizer events stream updated: ${events.length} events');
-            setState(() => _myEvents = events);
+            print('📡 Stream updated: ${events.length} events for organizerId: $organizerId');
+            if (events.isNotEmpty) {
+              print('Event IDs: ${events.map((e) => e.id).toList()}');
+            }
+            setState(() {
+              _myEvents = events;
+            });
           }
         },
         onError: (error) {
-          print('Error in organizer events stream: $error');
+          print('❌ Error in organizer events stream: $error');
           if (mounted) {
             ScaffoldMessenger.of(context).showSnackBar(
               SnackBar(
@@ -90,12 +180,78 @@ class _OrganizerDashboardState extends State<OrganizerDashboard> {
         },
       );
       
-      setState(() {
-        _currentUser = user;
-        _isLoading = false;
+      // Set up listener for notifications
+      _setupNotificationListener();
+    } catch (e, stackTrace) {
+      print('❌ Error in _loadData: $e');
+      print('Stack trace: $stackTrace');
+      setState(() => _isLoading = false);
+    }
+  }
+  
+  // Set up listener for notifications from Firestore
+  void _setupNotificationListener() {
+    try {
+      final notificationsCol = FirebaseFirestore.instance.collection('notifications');
+      _notificationSubscription?.cancel();
+      
+      // Listen to all unread notifications
+      _notificationSubscription = notificationsCol
+          .where('read', isEqualTo: false)
+          .orderBy('createdAt', descending: true)
+          .snapshots()
+          .listen((snapshot) {
+        if (snapshot.docs.isNotEmpty && mounted) {
+          for (var doc in snapshot.docs) {
+            final notificationId = doc.id;
+            if (_shownNotificationIds.contains(notificationId)) continue;
+            
+            final data = doc.data();
+            final type = data['type'] as String?;
+            final eventTitle = data['eventTitle'] as String? ?? 'Event';
+            final eventId = data['eventId'] as String? ?? '';
+            final category = data['category'] as String? ?? '';
+            
+            String title;
+            String body;
+            
+            switch (type) {
+              case 'new_event':
+                title = 'New Event Available!';
+                body = '$eventTitle - $category';
+                break;
+              case 'event_reminder':
+                title = 'Event Reminder';
+                body = '$eventTitle is happening soon!';
+                break;
+              case 'event_update':
+                title = 'Event Update: $eventTitle';
+                body = data['updateMessage'] as String? ?? 'Event has been updated';
+                break;
+              case 'event_registration':
+                title = 'Registration Confirmed';
+                body = 'You have successfully registered for $eventTitle';
+                break;
+              default:
+                title = 'EventBridge';
+                body = data['body'] as String? ?? 'You have a new notification';
+            }
+            
+            // Show system notification in phone notification panel
+            FirebaseNotificationService.showLocalNotification(
+              title: title,
+              body: body,
+              payload: 'event:$eventId',
+            );
+            
+            _shownNotificationIds.add(notificationId);
+          }
+        }
+      }, onError: (error) {
+        print('Error in notification listener: $error');
       });
     } catch (e) {
-      setState(() => _isLoading = false);
+      print('Error setting up notification listener: $e');
     }
   }
 
@@ -105,13 +261,21 @@ class _OrganizerDashboardState extends State<OrganizerDashboard> {
 
   @override
   Widget build(BuildContext context) {
+    print('OrganizerDashboard build() called - isLoading: $_isLoading, events: ${_myEvents.length}');
     return Scaffold(
       appBar: AppBar(
         title: const Text('EventBridge - Organizer'),
         actions: [
           IconButton(
             icon: const Icon(Icons.notifications_outlined),
-            onPressed: () {},
+            onPressed: () {
+              Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (context) => NotificationsScreen(userId: widget.userId),
+                ),
+              );
+            },
           ),
           IconButton(
             icon: const Icon(Icons.person_outline),
@@ -173,6 +337,10 @@ class _OrganizerDashboardState extends State<OrganizerDashboard> {
   }
 
   Widget _buildHomeScreen() {
+    if (_isLoading) {
+      return const Center(child: CircularProgressIndicator());
+    }
+    
     // Calculate real stats from _myEvents
     final totalEvents = _myEvents.length;
     final totalParticipants = _myEvents.fold<int>(
@@ -191,10 +359,28 @@ class _OrganizerDashboardState extends State<OrganizerDashboard> {
       event.status == EventStatus.draft || event.status == EventStatus.published
     ).length;
     
-    // Get recent events (last 5, sorted by date descending)
-    final recentEvents = List<Event>.from(_myEvents)
+    // Categorize events
+    final today = DateTime(now.year, now.month, now.day);
+    
+    final upcomingEvents = _myEvents.where((event) {
+      final eventDate = DateTime(event.date.year, event.date.month, event.date.day);
+      return eventDate.isAfter(today);
+    }).toList()
+      ..sort((a, b) => a.date.compareTo(b.date));
+    
+    final ongoingEvents = _myEvents.where((event) {
+      final eventDate = DateTime(event.date.year, event.date.month, event.date.day);
+      return eventDate.isAtSameMomentAs(today);
+    }).toList()
+      ..sort((a, b) => a.date.compareTo(b.date));
+    
+    final pastEvents = _myEvents.where((event) {
+      final eventDate = DateTime(event.date.year, event.date.month, event.date.day);
+      return eventDate.isBefore(today);
+    }).toList()
       ..sort((a, b) => b.date.compareTo(a.date));
-    final displayEvents = recentEvents.take(5).toList();
+    
+    print('Home screen - Total events: $totalEvents, Upcoming: ${upcomingEvents.length}, Ongoing: ${ongoingEvents.length}, Past: ${pastEvents.length}');
 
     return RefreshIndicator(
       onRefresh: _refreshData,
@@ -248,31 +434,92 @@ class _OrganizerDashboardState extends State<OrganizerDashboard> {
               ],
             ),
             const SizedBox(height: 24),
-            // Recent Events
-            const Text(
-              'Recent Events',
-              style: TextStyle(
-                fontSize: 20,
-                fontWeight: FontWeight.bold,
-              ),
-            ),
-            const SizedBox(height: 16),
-            if (displayEvents.isEmpty)
-              const Padding(
-                padding: EdgeInsets.all(32.0),
-                child: Center(
-                  child: Text(
-                    'No events created yet.\nCreate your first event!',
-                    style: TextStyle(
-                      color: Colors.grey,
-                      fontSize: 16,
+            
+            // Analytics Quick Access
+            Card(
+              elevation: 2,
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+              child: InkWell(
+                onTap: () {
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (context) => AnalyticsScreen(events: _myEvents),
                     ),
-                    textAlign: TextAlign.center,
+                  );
+                },
+                borderRadius: BorderRadius.circular(12),
+                child: Padding(
+                  padding: const EdgeInsets.all(16.0),
+                  child: Row(
+                    children: [
+                      Container(
+                        padding: const EdgeInsets.all(12),
+                        decoration: BoxDecoration(
+                          color: Colors.purple.withOpacity(0.1),
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                        child: const Icon(
+                          Icons.analytics,
+                          color: Colors.purple,
+                          size: 30,
+                        ),
+                      ),
+                      const SizedBox(width: 16),
+                      const Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              'View Analytics',
+                              style: TextStyle(
+                                fontSize: 16,
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
+                            SizedBox(height: 4),
+                            Text(
+                              'See event success rates and statistics',
+                              style: TextStyle(
+                                fontSize: 12,
+                                color: Colors.grey,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                      const Icon(Icons.arrow_forward_ios, size: 16, color: Colors.grey),
+                    ],
                   ),
                 ),
-              )
-            else
-              ...displayEvents.map((event) => Padding(
+              ),
+            ),
+            const SizedBox(height: 24),
+            
+            // Upcoming Events
+            if (upcomingEvents.isNotEmpty) ...[
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  const Text(
+                    'Upcoming Events',
+                    style: TextStyle(
+                      fontSize: 20,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                  Text(
+                    '${upcomingEvents.length}',
+                    style: TextStyle(
+                      fontSize: 16,
+                      color: Colors.grey[600],
+                      fontWeight: FontWeight.w500,
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 16),
+              ...upcomingEvents.take(5).map((event) => Padding(
                 padding: const EdgeInsets.only(bottom: 12),
                 child: GestureDetector(
                   onTap: () => _viewEventDetails(event),
@@ -286,6 +533,103 @@ class _OrganizerDashboardState extends State<OrganizerDashboard> {
                   ),
                 ),
               )),
+              const SizedBox(height: 24),
+            ],
+            
+            // Ongoing Events
+            if (ongoingEvents.isNotEmpty) ...[
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  const Text(
+                    'Ongoing Events',
+                    style: TextStyle(
+                      fontSize: 20,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                  Text(
+                    '${ongoingEvents.length}',
+                    style: TextStyle(
+                      fontSize: 16,
+                      color: Colors.grey[600],
+                      fontWeight: FontWeight.w500,
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 16),
+              ...ongoingEvents.take(5).map((event) => Padding(
+                padding: const EdgeInsets.only(bottom: 12),
+                child: GestureDetector(
+                  onTap: () => _viewEventDetails(event),
+                  child: _buildEventCard(
+                    event.title,
+                    '${DateFormat('MMM d, y').format(event.date)} • ${event.time}',
+                    event.location,
+                    '${event.participants.length} participants',
+                    _getStatusText(event.status),
+                    _getStatusColor(event.status),
+                  ),
+                ),
+              )),
+              const SizedBox(height: 24),
+            ],
+            
+            // Past Events
+            if (pastEvents.isNotEmpty) ...[
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  const Text(
+                    'Past Events',
+                    style: TextStyle(
+                      fontSize: 20,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                  Text(
+                    '${pastEvents.length}',
+                    style: TextStyle(
+                      fontSize: 16,
+                      color: Colors.grey[600],
+                      fontWeight: FontWeight.w500,
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 16),
+              ...pastEvents.take(3).map((event) => Padding(
+                padding: const EdgeInsets.only(bottom: 12),
+                child: GestureDetector(
+                  onTap: () => _viewEventDetails(event),
+                  child: _buildEventCard(
+                    event.title,
+                    '${DateFormat('MMM d, y').format(event.date)} • ${event.time}',
+                    event.location,
+                    '${event.participants.length} participants',
+                    _getStatusText(event.status),
+                    _getStatusColor(event.status),
+                  ),
+                ),
+              )),
+            ],
+            
+            // Empty state
+            if (_myEvents.isEmpty)
+              const Padding(
+                padding: EdgeInsets.all(32.0),
+                child: Center(
+                  child: Text(
+                    'No events created yet.\nCreate your first event!',
+                    style: TextStyle(
+                      color: Colors.grey,
+                      fontSize: 16,
+                    ),
+                    textAlign: TextAlign.center,
+                  ),
+                ),
+              ),
           ],
         ),
       ),
@@ -359,9 +703,31 @@ class _OrganizerDashboardState extends State<OrganizerDashboard> {
       return const Center(child: CircularProgressIndicator());
     }
 
+    // Categorize events
+    final now = DateTime.now();
+    final today = DateTime(now.year, now.month, now.day);
+    
+    final upcomingEvents = _myEvents.where((event) {
+      final eventDate = DateTime(event.date.year, event.date.month, event.date.day);
+      return eventDate.isAfter(today);
+    }).toList()
+      ..sort((a, b) => a.date.compareTo(b.date));
+    
+    final ongoingEvents = _myEvents.where((event) {
+      final eventDate = DateTime(event.date.year, event.date.month, event.date.day);
+      return eventDate.isAtSameMomentAs(today);
+    }).toList()
+      ..sort((a, b) => a.date.compareTo(b.date));
+    
+    final pastEvents = _myEvents.where((event) {
+      final eventDate = DateTime(event.date.year, event.date.month, event.date.day);
+      return eventDate.isBefore(today);
+    }).toList()
+      ..sort((a, b) => b.date.compareTo(a.date));
+
     return RefreshIndicator(
       onRefresh: _refreshData,
-      child: Padding(
+      child: SingleChildScrollView(
         padding: const EdgeInsets.all(16.0),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -373,42 +739,145 @@ class _OrganizerDashboardState extends State<OrganizerDashboard> {
                 fontWeight: FontWeight.bold,
               ),
             ),
-            const SizedBox(height: 16),
-            Expanded(
-              child: _myEvents.isEmpty
-                  ? const Center(
-                      child: Text(
-                        'No events created yet.\nCreate your first event!',
-                        style: TextStyle(
-                          color: Colors.grey,
-                          fontSize: 16,
-                        ),
-                        textAlign: TextAlign.center,
-                      ),
-                    )
-                  : ListView.builder(
-                      itemCount: _myEvents.length,
-                      itemBuilder: (context, index) {
-                        final event = _myEvents[index];
-                        return Padding(
-                          padding: const EdgeInsets.only(bottom: 12),
-                          child: _buildMyEventCard(
-                            event.title,
-                            '${DateFormat('MMM d, y').format(event.date)} • ${event.time}',
-                            event.location,
-                            '${event.participants.length} participants',
-                            _getStatusText(event.status),
-                            _getStatusColor(event.status),
-                            onEdit: () => _editEvent(event),
-                            onManage: () => _manageEvent(event),
-                            onViewDetails: () => _viewEventDetails(event),
-                            onDelete: () => _deleteEvent(event),
-                            onMarkDone: () => _markEventAsDone(event),
-                          ),
-                        );
-                      },
+            const SizedBox(height: 24),
+            
+            // Upcoming Events
+            if (upcomingEvents.isNotEmpty) ...[
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  const Text(
+                    'Upcoming',
+                    style: TextStyle(
+                      fontSize: 18,
+                      fontWeight: FontWeight.w600,
                     ),
-            ),
+                  ),
+                  Text(
+                    '${upcomingEvents.length}',
+                    style: TextStyle(
+                      fontSize: 14,
+                      color: Colors.grey[600],
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 12),
+              ...upcomingEvents.map((event) => Padding(
+                padding: const EdgeInsets.only(bottom: 12),
+                child: _buildMyEventCard(
+                  event.title,
+                  '${DateFormat('MMM d, y').format(event.date)} • ${event.time}',
+                  event.location,
+                  '${event.participants.length} participants',
+                  _getStatusText(event.status),
+                  _getStatusColor(event.status),
+                  onEdit: () => _editEvent(event),
+                  onManage: () => _manageEvent(event),
+                  onViewDetails: () => _viewEventDetails(event),
+                  onDelete: () => _deleteEvent(event),
+                  onMarkDone: () => _markEventAsDone(event),
+                ),
+              )),
+              const SizedBox(height: 24),
+            ],
+            
+            // Ongoing Events
+            if (ongoingEvents.isNotEmpty) ...[
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  const Text(
+                    'Ongoing',
+                    style: TextStyle(
+                      fontSize: 18,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                  Text(
+                    '${ongoingEvents.length}',
+                    style: TextStyle(
+                      fontSize: 14,
+                      color: Colors.grey[600],
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 12),
+              ...ongoingEvents.map((event) => Padding(
+                padding: const EdgeInsets.only(bottom: 12),
+                child: _buildMyEventCard(
+                  event.title,
+                  '${DateFormat('MMM d, y').format(event.date)} • ${event.time}',
+                  event.location,
+                  '${event.participants.length} participants',
+                  _getStatusText(event.status),
+                  _getStatusColor(event.status),
+                  onEdit: () => _editEvent(event),
+                  onManage: () => _manageEvent(event),
+                  onViewDetails: () => _viewEventDetails(event),
+                  onDelete: () => _deleteEvent(event),
+                  onMarkDone: () => _markEventAsDone(event),
+                ),
+              )),
+              const SizedBox(height: 24),
+            ],
+            
+            // Past Events
+            if (pastEvents.isNotEmpty) ...[
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  const Text(
+                    'Past',
+                    style: TextStyle(
+                      fontSize: 18,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                  Text(
+                    '${pastEvents.length}',
+                    style: TextStyle(
+                      fontSize: 14,
+                      color: Colors.grey[600],
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 12),
+              ...pastEvents.map((event) => Padding(
+                padding: const EdgeInsets.only(bottom: 12),
+                child: _buildMyEventCard(
+                  event.title,
+                  '${DateFormat('MMM d, y').format(event.date)} • ${event.time}',
+                  event.location,
+                  '${event.participants.length} participants',
+                  _getStatusText(event.status),
+                  _getStatusColor(event.status),
+                  onEdit: () => _editEvent(event),
+                  onManage: () => _manageEvent(event),
+                  onViewDetails: () => _viewEventDetails(event),
+                  onDelete: () => _deleteEvent(event),
+                  onMarkDone: () => _markEventAsDone(event),
+                ),
+              )),
+            ],
+            
+            // Empty state
+            if (_myEvents.isEmpty)
+              const Padding(
+                padding: EdgeInsets.all(32.0),
+                child: Center(
+                  child: Text(
+                    'No events created yet.\nCreate your first event!',
+                    style: TextStyle(
+                      color: Colors.grey,
+                      fontSize: 16,
+                    ),
+                    textAlign: TextAlign.center,
+                  ),
+                ),
+              ),
           ],
         ),
       ),
@@ -463,7 +932,14 @@ class _OrganizerDashboardState extends State<OrganizerDashboard> {
               _refreshData();
             }
           }),
-          _buildProfileOption('Event Analytics', Icons.analytics, () {}),
+          _buildProfileOption('Event Analytics', Icons.analytics, () {
+            Navigator.push(
+              context,
+              MaterialPageRoute(
+                builder: (context) => AnalyticsScreen(events: _myEvents),
+              ),
+            );
+          }),
           _buildProfileOption('Participant Management', Icons.people, () {}),
           _buildProfileOption('Settings', Icons.settings, () {}),
           _buildProfileOption('Help & Support', Icons.help, () {}),
@@ -472,6 +948,8 @@ class _OrganizerDashboardState extends State<OrganizerDashboard> {
             width: double.infinity,
             child: ElevatedButton(
               onPressed: () async {
+                // Sign out from Firebase Auth
+                await FirebaseUserService.signOut();
                 // Clear user state
                 setState(() => _currentUser = null);
                 // Navigate to welcome screen

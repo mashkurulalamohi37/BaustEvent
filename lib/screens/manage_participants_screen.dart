@@ -37,7 +37,7 @@ class _ManageParticipantsScreenState extends State<ManageParticipantsScreen> {
     setState(() => _isLoading = true);
     
     try {
-      final allUsers = await FirebaseUserService.getAllUsers();
+      final List<User> allUsers = await FirebaseUserService.getAllUsers();
       final participantIds = widget.event.participants;
       final participants = allUsers.where((user) => participantIds.contains(user.id)).toList();
       

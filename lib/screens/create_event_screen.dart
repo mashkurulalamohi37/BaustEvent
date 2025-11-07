@@ -40,6 +40,8 @@ class _CreateEventScreenState extends State<CreateEventScreen> {
     'Cultural',
     'Competitions',
     'Conferences',
+    'Rag Day',
+    'Picnic',
     'Other',
   ];
 

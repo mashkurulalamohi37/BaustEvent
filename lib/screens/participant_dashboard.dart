@@ -1,15 +1,18 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'event_details_screen.dart';
 import 'welcome_screen.dart';
 import '../models/event.dart';
 import '../models/user.dart';
 import '../services/firebase_event_service.dart';
 import '../services/firebase_user_service.dart';
+import '../services/firebase_notification_service.dart';
 import '../widgets/event_card.dart';
 import '../widgets/category_card.dart';
 import 'edit_profile_screen.dart';
+import 'notifications_screen.dart';
 
 class ParticipantDashboard extends StatefulWidget {
   final String? userId;
@@ -27,9 +30,13 @@ class _ParticipantDashboardState extends State<ParticipantDashboard> {
   List<Event> _allEvents = [];
   List<Event> _filteredEvents = [];
   List<Event> _myEvents = [];
+  List<Event> _upcomingEvents = [];
+  List<Event> _ongoingEvents = [];
+  List<Event> _pastEvents = [];
   User? _currentUser;
   bool _isLoading = true;
   String _selectedCategory = '';
+  bool _hasPendingOrganizerRequest = false;
 
   @override
   void initState() {
@@ -43,17 +50,40 @@ class _ParticipantDashboardState extends State<ParticipantDashboard> {
 
   StreamSubscription<List<Event>>? _eventsSubscription;
   StreamSubscription<List<Event>>? _myEventsSubscription;
+  StreamSubscription<QuerySnapshot>? _notificationSubscription;
+  Set<String> _shownNotificationIds = {}; // Track which notifications we've already shown
 
   @override
   void dispose() {
     _searchController.dispose();
     _eventsSubscription?.cancel();
     _myEventsSubscription?.cancel();
+    _notificationSubscription?.cancel();
     super.dispose();
   }
 
   Future<void> _loadData() async {
     setState(() => _isLoading = true);
+    
+    // Initialize FCM token and subscribe to notifications
+    try {
+      final token = await FirebaseNotificationService.getToken();
+      if (token != null) {
+        // Get user first to save token
+        User? tempUser;
+        if (widget.userId != null) {
+          tempUser = await FirebaseUserService.getUserById(widget.userId!);
+        } else {
+          tempUser = await FirebaseUserService.getCurrentUserWithDetails();
+        }
+        if (tempUser != null) {
+          await FirebaseNotificationService.saveFCMToken(tempUser.id, token);
+          await FirebaseNotificationService.subscribeToTopic('new_events');
+        }
+      }
+    } catch (e) {
+      print('Error setting up notifications: $e');
+    }
     
     try {
       User? user;
@@ -85,9 +115,12 @@ class _ParticipantDashboardState extends State<ParticipantDashboard> {
             print('All events stream updated: ${events.length} events');
             setState(() {
               _allEvents = events;
-              _filteredEvents = _selectedCategory.isEmpty 
+              // Apply category filter if one is selected
+              final filtered = _selectedCategory.isEmpty 
                   ? events 
                   : events.where((e) => e.category == _selectedCategory).toList();
+              _filteredEvents = filtered;
+              _categorizeEvents(filtered);
             });
           }
         },
@@ -129,38 +162,281 @@ class _ParticipantDashboardState extends State<ParticipantDashboard> {
         },
       );
       
+      // Check if user has pending organizer request
+      bool hasPendingRequest = false;
+      if (user != null) {
+        hasPendingRequest = await FirebaseUserService.hasPendingOrganizerRequest(user.id);
+      }
+      
       setState(() {
         _currentUser = user;
         _isLoading = false;
+        _hasPendingOrganizerRequest = hasPendingRequest;
       });
+      
+      // Set up listener for new event notifications
+      _setupNotificationListener();
     } catch (e) {
       setState(() => _isLoading = false);
+    }
+  }
+  
+  // Set up listener for notifications from Firestore
+  void _setupNotificationListener() {
+    try {
+      print('Setting up notification listener for participant...');
+      final notificationsCol = FirebaseFirestore.instance.collection('notifications');
+      _notificationSubscription?.cancel();
+      
+      // Listen to all unread notifications (not just new_event)
+      _notificationSubscription = notificationsCol
+          .where('read', isEqualTo: false)
+          .orderBy('createdAt', descending: true)
+          .snapshots()
+          .listen((snapshot) {
+        print('Notification listener triggered: ${snapshot.docs.length} unread notifications');
+        
+        if (snapshot.docs.isNotEmpty && mounted) {
+          // Process each new unread notification
+          for (var doc in snapshot.docs) {
+            final notificationId = doc.id;
+            
+            // Skip if we've already shown this notification
+            if (_shownNotificationIds.contains(notificationId)) {
+              print('Skipping already shown notification: $notificationId');
+              continue;
+            }
+            
+            final data = doc.data();
+            final type = data['type'] as String?;
+            final eventTitle = data['eventTitle'] as String? ?? 'Event';
+            final eventId = data['eventId'] as String? ?? '';
+            final category = data['category'] as String? ?? '';
+            
+            print('Processing notification: type=$type, eventTitle=$eventTitle, eventId=$eventId');
+            
+            // Show system notification based on type
+            String title;
+            String body;
+            
+            switch (type) {
+              case 'new_event':
+                title = 'New Event Available!';
+                body = '$eventTitle - $category';
+                break;
+              case 'event_reminder':
+                title = 'Event Reminder';
+                body = '$eventTitle is happening soon!';
+                break;
+              case 'event_update':
+                title = 'Event Update: $eventTitle';
+                body = data['updateMessage'] as String? ?? 'Event has been updated';
+                break;
+              case 'event_registration':
+                title = 'Registration Confirmed';
+                body = 'You have successfully registered for $eventTitle';
+                break;
+              default:
+                title = 'EventBridge';
+                body = data['body'] as String? ?? 'You have a new notification';
+            }
+            
+            print('Showing system notification: $title - $body');
+            
+            // Show system notification in phone notification panel
+            FirebaseNotificationService.showLocalNotification(
+              title: title,
+              body: body,
+              payload: 'event:$eventId',
+            );
+            
+            // Mark this notification as shown (don't mark as read - let user do that in notifications screen)
+            _shownNotificationIds.add(notificationId);
+            print('Notification marked as shown: $notificationId');
+            
+            // Refresh events list
+            if (mounted) {
+              _refreshData();
+            }
+          }
+        } else {
+          print('No unread notifications found');
+        }
+      }, onError: (error) {
+        print('Error in notification listener: $error');
+        // Fallback to query without orderBy
+        _setupNotificationListenerFallback();
+      });
+      print('Notification listener set up successfully');
+    } catch (e, stackTrace) {
+      print('Error setting up notification listener: $e');
+      print('Stack trace: $stackTrace');
+      // Fallback to query without orderBy
+      _setupNotificationListenerFallback();
+    }
+  }
+  
+  void _setupNotificationListenerFallback() {
+    try {
+      print('Setting up fallback notification listener (without orderBy)...');
+      final notificationsCol = FirebaseFirestore.instance.collection('notifications');
+      _notificationSubscription?.cancel();
+      _notificationSubscription = notificationsCol
+          .where('read', isEqualTo: false)
+          .snapshots()
+          .listen((snapshot) {
+        print('Fallback notification listener triggered: ${snapshot.docs.length} unread notifications');
+        
+        if (snapshot.docs.isNotEmpty && mounted) {
+          // Process all unread notifications
+          for (var doc in snapshot.docs) {
+            final notificationId = doc.id;
+            
+            // Skip if we've already shown this notification
+            if (_shownNotificationIds.contains(notificationId)) {
+              continue;
+            }
+            
+            final data = doc.data();
+            final type = data['type'] as String?;
+            final eventTitle = data['eventTitle'] as String? ?? 'Event';
+            final eventId = data['eventId'] as String? ?? '';
+            final category = data['category'] as String? ?? '';
+            
+            // Show system notification based on type
+            String title;
+            String body;
+            
+            switch (type) {
+              case 'new_event':
+                title = 'New Event Available!';
+                body = '$eventTitle - $category';
+                break;
+              case 'event_reminder':
+                title = 'Event Reminder';
+                body = '$eventTitle is happening soon!';
+                break;
+              case 'event_update':
+                title = 'Event Update: $eventTitle';
+                body = data['updateMessage'] as String? ?? 'Event has been updated';
+                break;
+              case 'event_registration':
+                title = 'Registration Confirmed';
+                body = 'You have successfully registered for $eventTitle';
+                break;
+              default:
+                title = 'EventBridge';
+                body = data['body'] as String? ?? 'You have a new notification';
+            }
+            
+            print('Showing system notification (fallback): $title - $body');
+            
+            // Show system notification in phone notification panel
+            FirebaseNotificationService.showLocalNotification(
+              title: title,
+              body: body,
+              payload: 'event:$eventId',
+            );
+            
+            // Mark this notification as shown
+            _shownNotificationIds.add(notificationId);
+            
+            // Refresh events list
+            if (mounted) {
+              _refreshData();
+            }
+          }
+        }
+      }, onError: (error) {
+        print('Error in notification listener (fallback): $error');
+      });
+      print('Fallback notification listener set up successfully');
+    } catch (e2, stackTrace) {
+      print('Error in fallback notification listener: $e2');
+      print('Stack trace: $stackTrace');
     }
   }
 
   Future<void> _searchEvents(String query) async {
     if (query.isEmpty) {
-      setState(() => _filteredEvents = _allEvents);
+      // Reset to show all events with category filter applied
+      final filtered = _selectedCategory.isEmpty 
+          ? _allEvents 
+          : _allEvents.where((e) => e.category == _selectedCategory).toList();
+      setState(() {
+        _filteredEvents = filtered;
+        _categorizeEvents(filtered);
+      });
       return;
     }
     
+    // Perform search
     final results = await FirebaseEventService.searchEvents(query);
-    setState(() => _filteredEvents = results);
+    
+    // Apply category filter if one is selected
+    final filteredResults = _selectedCategory.isEmpty 
+        ? results 
+        : results.where((e) => e.category == _selectedCategory).toList();
+    
+    setState(() {
+      _filteredEvents = filteredResults;
+      // Also categorize search results
+      _categorizeEvents(filteredResults);
+    });
   }
 
   Future<void> _filterByCategory(String category) async {
     setState(() => _selectedCategory = category);
     
+    // Filter events based on category
+    List<Event> eventsToCategorize;
     if (category.isEmpty) {
+      eventsToCategorize = _allEvents;
       setState(() => _filteredEvents = _allEvents);
     } else {
-      final results = await FirebaseEventService.getEventsByCategory(category);
-      setState(() => _filteredEvents = results);
+      // Filter from all events by category (client-side filtering is faster)
+      eventsToCategorize = _allEvents.where((e) => e.category == category).toList();
+      setState(() => _filteredEvents = eventsToCategorize);
     }
+    
+    // Re-categorize the filtered events
+    _categorizeEvents(eventsToCategorize);
+  }
+
+  void _categorizeEvents(List<Event> events) {
+    final now = DateTime.now();
+    final today = DateTime(now.year, now.month, now.day);
+    
+    _upcomingEvents = events.where((event) {
+      final eventDate = DateTime(event.date.year, event.date.month, event.date.day);
+      return eventDate.isAfter(today);
+    }).toList()
+      ..sort((a, b) => a.date.compareTo(b.date));
+    
+    _ongoingEvents = events.where((event) {
+      final eventDate = DateTime(event.date.year, event.date.month, event.date.day);
+      return eventDate.isAtSameMomentAs(today);
+    }).toList()
+      ..sort((a, b) => a.date.compareTo(b.date));
+    
+    _pastEvents = events.where((event) {
+      final eventDate = DateTime(event.date.year, event.date.month, event.date.day);
+      return eventDate.isBefore(today);
+    }).toList()
+      ..sort((a, b) => b.date.compareTo(a.date)); // Sort past events descending (most recent first)
   }
 
   Future<void> _refreshData() async {
     await _loadData();
+    // Also check for pending organizer request status
+    if (_currentUser != null) {
+      final hasPending = await FirebaseUserService.hasPendingOrganizerRequest(_currentUser!.id);
+      if (mounted) {
+        setState(() {
+          _hasPendingOrganizerRequest = hasPending;
+        });
+      }
+    }
   }
 
   // Check if current user is a guest
@@ -227,6 +503,18 @@ class _ParticipantDashboardState extends State<ParticipantDashboard> {
       return;
     }
 
+    // Prevent admins from registering for events
+    if (_currentUser!.isAdmin) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Admins cannot register for events. Admins can only manage and view events.'),
+          backgroundColor: Colors.orange,
+          duration: Duration(seconds: 3),
+        ),
+      );
+      return;
+    }
+
     // Use widget.userId if available, otherwise use currentUser.id
     String userId;
     if (widget.userId != null) {
@@ -286,7 +574,14 @@ class _ParticipantDashboardState extends State<ParticipantDashboard> {
         actions: [
           IconButton(
             icon: const Icon(Icons.notifications_outlined),
-            onPressed: () {},
+            onPressed: () {
+              Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (context) => NotificationsScreen(userId: widget.userId),
+                ),
+              );
+            },
           ),
           IconButton(
             icon: const Icon(Icons.person_outline),
@@ -351,6 +646,9 @@ class _ParticipantDashboardState extends State<ParticipantDashboard> {
       return const Center(child: CircularProgressIndicator());
     }
 
+    // Check if there's an active search query
+    final hasSearchQuery = _searchController.text.isNotEmpty;
+
     return RefreshIndicator(
       onRefresh: _refreshData,
       child: SingleChildScrollView(
@@ -367,25 +665,145 @@ class _ParticipantDashboardState extends State<ParticipantDashboard> {
               child: TextField(
                 controller: _searchController,
                 onChanged: _searchEvents,
-                decoration: const InputDecoration(
+                decoration: InputDecoration(
                   hintText: 'Search events...',
-                  prefixIcon: Icon(Icons.search),
+                  prefixIcon: const Icon(Icons.search),
+                  suffixIcon: hasSearchQuery
+                      ? IconButton(
+                          icon: const Icon(Icons.clear),
+                          onPressed: () {
+                            _searchController.clear();
+                            _searchEvents('');
+                          },
+                        )
+                      : null,
                   border: InputBorder.none,
-                  contentPadding: EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                  contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
                 ),
               ),
             ),
-            const SizedBox(height: 24),
-            
-            // Categories
-            const Text(
-              'Categories',
-              style: TextStyle(
-                fontSize: 20,
-                fontWeight: FontWeight.bold,
-              ),
-            ),
             const SizedBox(height: 16),
+            
+            // Pending Organizer Request Banner
+            if (_hasPendingOrganizerRequest)
+              Container(
+                margin: const EdgeInsets.only(bottom: 16),
+                padding: const EdgeInsets.all(16),
+                decoration: BoxDecoration(
+                  color: Colors.blue.shade50,
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(color: Colors.blue.shade200, width: 1.5),
+                ),
+                child: Row(
+                  children: [
+                    Icon(Icons.pending_actions, color: Colors.blue.shade700, size: 32),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            'Organizer Request Pending',
+                            style: TextStyle(
+                              fontSize: 16,
+                              fontWeight: FontWeight.bold,
+                              color: Colors.blue.shade900,
+                            ),
+                          ),
+                          const SizedBox(height: 4),
+                          Text(
+                            'Your request to become an organizer is being reviewed by an admin. You will be notified once approved.',
+                            style: TextStyle(
+                              fontSize: 13,
+                              color: Colors.blue.shade800,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            
+            const SizedBox(height: 8),
+            
+            // Show search results if searching
+            if (hasSearchQuery) ...[
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Text(
+                    'Search Results (${_filteredEvents.length})',
+                    style: const TextStyle(
+                      fontSize: 20,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                  TextButton(
+                    onPressed: () {
+                      _searchController.clear();
+                      _searchEvents('');
+                    },
+                    child: const Text('Clear'),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 16),
+              if (_filteredEvents.isEmpty)
+                const Center(
+                  child: Padding(
+                    padding: EdgeInsets.all(32.0),
+                    child: Text(
+                      'No events found. Try different keywords.',
+                      style: TextStyle(
+                        fontSize: 16,
+                        color: Colors.grey,
+                      ),
+                    ),
+                  ),
+                )
+              else
+                ..._filteredEvents.map((event) {
+                  String? userId;
+                  if (widget.userId != null) {
+                    userId = widget.userId;
+                  } else if (_currentUser != null) {
+                    userId = _currentUser!.id;
+                  }
+                  final isRegistered = userId != null && event.participants.contains(userId);
+                  
+                  return Padding(
+                    padding: const EdgeInsets.only(bottom: 12),
+                    child: EventCard(
+                      title: event.title,
+                      description: event.description,
+                      date: DateFormat('MMM d, y').format(event.date),
+                      time: event.time,
+                      location: event.location,
+                      icon: _getCategoryIcon(event.category),
+                      color: _getCategoryColor(event.category),
+                      onTap: () => _navigateToEventDetails(event),
+                      onRegister: () => _registerForEvent(event),
+                      onFavorite: () => _toggleFavorite(event),
+                      isRegistered: isRegistered,
+                      imageUrl: event.imageUrl,
+                    ),
+                  );
+                }),
+              const SizedBox(height: 24),
+            ],
+            
+            // Only show categories and categorized events if not searching
+            if (!hasSearchQuery) ...[
+              // Categories
+              const Text(
+                'Categories',
+                style: TextStyle(
+                  fontSize: 20,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+              const SizedBox(height: 16),
             SizedBox(
               height: 100,
               child: ListView(
@@ -425,49 +843,49 @@ class _ParticipantDashboardState extends State<ParticipantDashboard> {
                     color: _selectedCategory == 'Competitions' ? const Color(0xFF1976D2) : Colors.purple,
                     onTap: () => _filterByCategory('Competitions'),
                   ),
+                  const SizedBox(width: 12),
+                  CategoryCard(
+                    title: 'Rag Day',
+                    icon: Icons.celebration,
+                    color: _selectedCategory == 'Rag Day' ? const Color(0xFF1976D2) : Colors.pink,
+                    onTap: () => _filterByCategory('Rag Day'),
+                  ),
+                  const SizedBox(width: 12),
+                  CategoryCard(
+                    title: 'Picnic',
+                    icon: Icons.park,
+                    color: _selectedCategory == 'Picnic' ? const Color(0xFF1976D2) : Colors.teal,
+                    onTap: () => _filterByCategory('Picnic'),
+                  ),
                 ],
               ),
             ),
             const SizedBox(height: 24),
             
-            // Events
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                Text(
-                  _selectedCategory.isEmpty ? 'All Events' : '$_selectedCategory Events',
-                  style: const TextStyle(
-                    fontSize: 20,
-                    fontWeight: FontWeight.bold,
-                  ),
-                ),
-                TextButton(
-                  onPressed: () {
-                    setState(() => _selectedIndex = 1); // Switch to search tab
-                  },
-                  child: const Text('View All'),
-                ),
-              ],
-            ),
-            const SizedBox(height: 16),
-            
-            // Event Cards
-            if (_filteredEvents.isEmpty)
-              const Center(
-                child: Padding(
-                  padding: EdgeInsets.all(32.0),
-                  child: Text(
-                    'No events found',
+            // Upcoming Events Section
+            if (_upcomingEvents.isNotEmpty) ...[
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  const Text(
+                    'Upcoming Events',
                     style: TextStyle(
-                      fontSize: 16,
-                      color: Colors.grey,
+                      fontSize: 20,
+                      fontWeight: FontWeight.bold,
                     ),
                   ),
-                ),
-              )
-            else
-              ..._filteredEvents.map((event) {
-                // Check if user is registered for this event
+                  Text(
+                    '${_upcomingEvents.length}',
+                    style: TextStyle(
+                      fontSize: 16,
+                      color: Colors.grey[600],
+                      fontWeight: FontWeight.w500,
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 16),
+              ..._upcomingEvents.take(5).map((event) {
                 String? userId;
                 if (widget.userId != null) {
                   userId = widget.userId;
@@ -494,6 +912,159 @@ class _ParticipantDashboardState extends State<ParticipantDashboard> {
                   ),
                 );
               }),
+              if (_upcomingEvents.length > 5)
+                Padding(
+                  padding: const EdgeInsets.only(bottom: 24),
+                  child: TextButton(
+                    onPressed: () {
+                      setState(() => _selectedIndex = 1); // Switch to search tab
+                    },
+                    child: const Text('View All Upcoming Events'),
+                  ),
+                ),
+              const SizedBox(height: 24),
+            ],
+            
+            // Ongoing Events Section
+            if (_ongoingEvents.isNotEmpty) ...[
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  const Text(
+                    'Ongoing Events',
+                    style: TextStyle(
+                      fontSize: 20,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                  Text(
+                    '${_ongoingEvents.length}',
+                    style: TextStyle(
+                      fontSize: 16,
+                      color: Colors.grey[600],
+                      fontWeight: FontWeight.w500,
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 16),
+              ..._ongoingEvents.take(5).map((event) {
+                String? userId;
+                if (widget.userId != null) {
+                  userId = widget.userId;
+                } else if (_currentUser != null) {
+                  userId = _currentUser!.id;
+                }
+                final isRegistered = userId != null && event.participants.contains(userId);
+                
+                return Padding(
+                  padding: const EdgeInsets.only(bottom: 12),
+                  child: EventCard(
+                    title: event.title,
+                    description: event.description,
+                    date: DateFormat('MMM d, y').format(event.date),
+                    time: event.time,
+                    location: event.location,
+                    icon: _getCategoryIcon(event.category),
+                    color: _getCategoryColor(event.category),
+                    onTap: () => _navigateToEventDetails(event),
+                    onRegister: () => _registerForEvent(event),
+                    onFavorite: () => _toggleFavorite(event),
+                    isRegistered: isRegistered,
+                    imageUrl: event.imageUrl,
+                  ),
+                );
+              }),
+              if (_ongoingEvents.length > 5)
+                Padding(
+                  padding: const EdgeInsets.only(bottom: 24),
+                  child: TextButton(
+                    onPressed: () {
+                      setState(() => _selectedIndex = 1); // Switch to search tab
+                    },
+                    child: const Text('View All Ongoing Events'),
+                  ),
+                ),
+              const SizedBox(height: 24),
+            ],
+            
+            // Past Events Section
+            if (_pastEvents.isNotEmpty) ...[
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  const Text(
+                    'Past Events',
+                    style: TextStyle(
+                      fontSize: 20,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                  Text(
+                    '${_pastEvents.length}',
+                    style: TextStyle(
+                      fontSize: 16,
+                      color: Colors.grey[600],
+                      fontWeight: FontWeight.w500,
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 16),
+              ..._pastEvents.take(3).map((event) {
+                String? userId;
+                if (widget.userId != null) {
+                  userId = widget.userId;
+                } else if (_currentUser != null) {
+                  userId = _currentUser!.id;
+                }
+                final isRegistered = userId != null && event.participants.contains(userId);
+                
+                return Padding(
+                  padding: const EdgeInsets.only(bottom: 12),
+                  child: EventCard(
+                    title: event.title,
+                    description: event.description,
+                    date: DateFormat('MMM d, y').format(event.date),
+                    time: event.time,
+                    location: event.location,
+                    icon: _getCategoryIcon(event.category),
+                    color: _getCategoryColor(event.category),
+                    onTap: () => _navigateToEventDetails(event),
+                    onRegister: () => _registerForEvent(event),
+                    onFavorite: () => _toggleFavorite(event),
+                    isRegistered: isRegistered,
+                    imageUrl: event.imageUrl,
+                  ),
+                );
+              }),
+              if (_pastEvents.length > 3)
+                Padding(
+                  padding: const EdgeInsets.only(bottom: 24),
+                  child: TextButton(
+                    onPressed: () {
+                      setState(() => _selectedIndex = 1); // Switch to search tab
+                    },
+                    child: const Text('View All Past Events'),
+                  ),
+                ),
+            ],
+            ],
+            
+            // Show message if no events (only when not searching)
+            if (!hasSearchQuery && _upcomingEvents.isEmpty && _ongoingEvents.isEmpty && _pastEvents.isEmpty)
+              const Center(
+                child: Padding(
+                  padding: EdgeInsets.all(32.0),
+                  child: Text(
+                    'No events found',
+                    style: TextStyle(
+                      fontSize: 16,
+                      color: Colors.grey,
+                    ),
+                  ),
+                ),
+              ),
           ],
         ),
       ),
@@ -501,87 +1072,122 @@ class _ParticipantDashboardState extends State<ParticipantDashboard> {
   }
 
   Widget _buildSearchScreen() {
-    return Padding(
-      padding: const EdgeInsets.all(16.0),
-      child: Column(
-        children: [
-          Container(
-            decoration: BoxDecoration(
-              color: Colors.grey[100],
-              borderRadius: BorderRadius.circular(12),
-            ),
-            child: TextField(
-              controller: _searchController,
-              onChanged: _searchEvents,
-              decoration: const InputDecoration(
-                hintText: 'Search events by name, category, or keyword...',
-                prefixIcon: Icon(Icons.search),
-                border: InputBorder.none,
-                contentPadding: EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+    // Check if there's an active search query
+    final hasSearchQuery = _searchController.text.isNotEmpty;
+    final displayEvents = hasSearchQuery ? _filteredEvents : _allEvents;
+    
+    return RefreshIndicator(
+      onRefresh: _refreshData,
+      child: Padding(
+        padding: const EdgeInsets.all(16.0),
+        child: Column(
+          children: [
+            Container(
+              decoration: BoxDecoration(
+                color: Colors.grey[100],
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: TextField(
+                controller: _searchController,
+                onChanged: _searchEvents,
+                decoration: const InputDecoration(
+                  hintText: 'Search events by name, category, or keyword...',
+                  prefixIcon: Icon(Icons.search),
+                  border: InputBorder.none,
+                  contentPadding: EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                ),
               ),
             ),
-          ),
-          const SizedBox(height: 20),
-          Text(
-            'Search Results (${_filteredEvents.length})',
-            style: const TextStyle(
-              fontSize: 18,
-              fontWeight: FontWeight.bold,
+            const SizedBox(height: 20),
+            Text(
+              hasSearchQuery 
+                  ? 'Search Results (${_filteredEvents.length})'
+                  : 'All Events (${_allEvents.length})',
+              style: const TextStyle(
+                fontSize: 18,
+                fontWeight: FontWeight.bold,
+              ),
             ),
-          ),
-          const SizedBox(height: 16),
-          Expanded(
-            child: _filteredEvents.isEmpty
-                ? const Center(
-                    child: Text(
-                      'No events found. Try searching with different keywords.',
-                      style: TextStyle(
-                        color: Colors.grey,
-                        fontSize: 16,
-                      ),
-                    ),
-                  )
-                : ListView.builder(
-                    itemCount: _filteredEvents.length,
-                    itemBuilder: (context, index) {
-                      final event = _filteredEvents[index];
-                      // Check if user is registered for this event
-                      String? userId;
-                      if (widget.userId != null) {
-                        userId = widget.userId;
-                      } else if (_currentUser != null) {
-                        userId = _currentUser!.id;
-                      }
-                      final isRegistered = userId != null && event.participants.contains(userId);
-                      
-                      return Padding(
-                        padding: const EdgeInsets.only(bottom: 12),
-                        child: EventCard(
-                          title: event.title,
-                          description: event.description,
-                          date: DateFormat('MMM d, y').format(event.date),
-                          time: event.time,
-                          location: event.location,
-                          icon: _getCategoryIcon(event.category),
-                          color: _getCategoryColor(event.category),
-                          onTap: () => _navigateToEventDetails(event),
-                          onRegister: () => _registerForEvent(event),
-                          onFavorite: () => _toggleFavorite(event),
-                          isRegistered: isRegistered,
+            const SizedBox(height: 16),
+            Expanded(
+              child: displayEvents.isEmpty
+                  ? Center(
+                      child: Text(
+                        hasSearchQuery
+                            ? 'No events found. Try searching with different keywords.'
+                            : 'No events available.',
+                        style: const TextStyle(
+                          color: Colors.grey,
+                          fontSize: 16,
                         ),
-                      );
-                    },
-                  ),
-          ),
-        ],
+                        textAlign: TextAlign.center,
+                      ),
+                    )
+                  : ListView.builder(
+                      itemCount: displayEvents.length,
+                      itemBuilder: (context, index) {
+                        final event = displayEvents[index];
+                        // Check if user is registered for this event
+                        String? userId;
+                        if (widget.userId != null) {
+                          userId = widget.userId;
+                        } else if (_currentUser != null) {
+                          userId = _currentUser!.id;
+                        }
+                        final isRegistered = userId != null && event.participants.contains(userId);
+                        
+                        return Padding(
+                          padding: const EdgeInsets.only(bottom: 12),
+                          child: EventCard(
+                            title: event.title,
+                            description: event.description,
+                            date: DateFormat('MMM d, y').format(event.date),
+                            time: event.time,
+                            location: event.location,
+                            icon: _getCategoryIcon(event.category),
+                            color: _getCategoryColor(event.category),
+                            onTap: () => _navigateToEventDetails(event),
+                            onRegister: () => _registerForEvent(event),
+                            onFavorite: () => _toggleFavorite(event),
+                            isRegistered: isRegistered,
+                            imageUrl: event.imageUrl,
+                          ),
+                        );
+                      },
+                    ),
+            ),
+          ],
+        ),
       ),
     );
   }
 
   Widget _buildMyEventsScreen() {
+    // Categorize my events
+    final now = DateTime.now();
+    final today = DateTime(now.year, now.month, now.day);
+    
+    final myUpcomingEvents = _myEvents.where((event) {
+      final eventDate = DateTime(event.date.year, event.date.month, event.date.day);
+      return eventDate.isAfter(today);
+    }).toList()
+      ..sort((a, b) => a.date.compareTo(b.date));
+    
+    final myOngoingEvents = _myEvents.where((event) {
+      final eventDate = DateTime(event.date.year, event.date.month, event.date.day);
+      return eventDate.isAtSameMomentAs(today);
+    }).toList()
+      ..sort((a, b) => a.date.compareTo(b.date));
+    
+    final myPastEvents = _myEvents.where((event) {
+      final eventDate = DateTime(event.date.year, event.date.month, event.date.day);
+      return eventDate.isBefore(today);
+    }).toList()
+      ..sort((a, b) => b.date.compareTo(a.date));
+    
     return RefreshIndicator(
       onRefresh: _refreshData,
-      child: Padding(
+      child: SingleChildScrollView(
         padding: const EdgeInsets.all(16.0),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -593,37 +1199,130 @@ class _ParticipantDashboardState extends State<ParticipantDashboard> {
                 fontWeight: FontWeight.bold,
               ),
             ),
-            const SizedBox(height: 16),
-            Expanded(
-              child: _myEvents.isEmpty
-                  ? const Center(
-                      child: Text(
-                        'No registered events yet.\nBrowse events to register!',
-                        style: TextStyle(
-                          color: Colors.grey,
-                          fontSize: 16,
-                        ),
-                        textAlign: TextAlign.center,
-                      ),
-                    )
-                  : ListView.builder(
-                      itemCount: _myEvents.length,
-                      itemBuilder: (context, index) {
-                        final event = _myEvents[index];
-                        return Padding(
-                          padding: const EdgeInsets.only(bottom: 12),
-                          child: _buildMyEventCard(
-                            event.title,
-                            '${DateFormat('MMM d, y').format(event.date)} • ${event.time}',
-                            event.location,
-                            _getStatusText(event.status),
-                            _getStatusColor(event.status),
-                            onTap: () => _navigateToEventDetails(event),
-                          ),
-                        );
-                      },
+            const SizedBox(height: 24),
+            
+            // Upcoming Events
+            if (myUpcomingEvents.isNotEmpty) ...[
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  const Text(
+                    'Upcoming',
+                    style: TextStyle(
+                      fontSize: 18,
+                      fontWeight: FontWeight.w600,
                     ),
-            ),
+                  ),
+                  Text(
+                    '${myUpcomingEvents.length}',
+                    style: TextStyle(
+                      fontSize: 14,
+                      color: Colors.grey[600],
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 12),
+              ...myUpcomingEvents.map((event) => Padding(
+                padding: const EdgeInsets.only(bottom: 12),
+                child: _buildMyEventCard(
+                  event.title,
+                  '${DateFormat('MMM d, y').format(event.date)} • ${event.time}',
+                  event.location,
+                  _getStatusText(event.status),
+                  _getStatusColor(event.status),
+                  onTap: () => _navigateToEventDetails(event),
+                ),
+              )),
+              const SizedBox(height: 24),
+            ],
+            
+            // Ongoing Events
+            if (myOngoingEvents.isNotEmpty) ...[
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  const Text(
+                    'Ongoing',
+                    style: TextStyle(
+                      fontSize: 18,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                  Text(
+                    '${myOngoingEvents.length}',
+                    style: TextStyle(
+                      fontSize: 14,
+                      color: Colors.grey[600],
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 12),
+              ...myOngoingEvents.map((event) => Padding(
+                padding: const EdgeInsets.only(bottom: 12),
+                child: _buildMyEventCard(
+                  event.title,
+                  '${DateFormat('MMM d, y').format(event.date)} • ${event.time}',
+                  event.location,
+                  _getStatusText(event.status),
+                  _getStatusColor(event.status),
+                  onTap: () => _navigateToEventDetails(event),
+                ),
+              )),
+              const SizedBox(height: 24),
+            ],
+            
+            // Past Events
+            if (myPastEvents.isNotEmpty) ...[
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  const Text(
+                    'Past',
+                    style: TextStyle(
+                      fontSize: 18,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                  Text(
+                    '${myPastEvents.length}',
+                    style: TextStyle(
+                      fontSize: 14,
+                      color: Colors.grey[600],
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 12),
+              ...myPastEvents.map((event) => Padding(
+                padding: const EdgeInsets.only(bottom: 12),
+                child: _buildMyEventCard(
+                  event.title,
+                  '${DateFormat('MMM d, y').format(event.date)} • ${event.time}',
+                  event.location,
+                  _getStatusText(event.status),
+                  _getStatusColor(event.status),
+                  onTap: () => _navigateToEventDetails(event),
+                ),
+              )),
+            ],
+            
+            // Empty state
+            if (_myEvents.isEmpty)
+              const Padding(
+                padding: EdgeInsets.all(32.0),
+                child: Center(
+                  child: Text(
+                    'No registered events yet.\nBrowse events to register!',
+                    style: TextStyle(
+                      color: Colors.grey,
+                      fontSize: 16,
+                    ),
+                    textAlign: TextAlign.center,
+                  ),
+                ),
+              ),
           ],
         ),
       ),
@@ -689,7 +1388,14 @@ class _ParticipantDashboardState extends State<ParticipantDashboard> {
               _refreshData();
             }
           }),
-          _buildProfileOption('Notifications', Icons.notifications, () {}),
+          _buildProfileOption('Notifications', Icons.notifications, () {
+            Navigator.push(
+              context,
+              MaterialPageRoute(
+                builder: (context) => NotificationsScreen(userId: widget.userId),
+              ),
+            );
+          }),
           _buildProfileOption('Settings', Icons.settings, () {}),
           _buildProfileOption('Help & Support', Icons.help, () {}),
           const Spacer(),
@@ -697,6 +1403,8 @@ class _ParticipantDashboardState extends State<ParticipantDashboard> {
             width: double.infinity,
             child: ElevatedButton(
               onPressed: () async {
+                // Sign out from Firebase Auth
+                await FirebaseUserService.signOut();
                 // Clear user state
                 setState(() => _currentUser = null);
                 // Navigate to welcome screen
@@ -965,6 +1673,10 @@ class _ParticipantDashboardState extends State<ParticipantDashboard> {
         return Icons.palette;
       case 'competitions':
         return Icons.emoji_events;
+      case 'rag day':
+        return Icons.celebration;
+      case 'picnic':
+        return Icons.park;
       default:
         return Icons.event;
     }
@@ -980,6 +1692,10 @@ class _ParticipantDashboardState extends State<ParticipantDashboard> {
         return Colors.orange;
       case 'competitions':
         return Colors.purple;
+      case 'rag day':
+        return Colors.pink;
+      case 'picnic':
+        return Colors.teal;
       default:
         return const Color(0xFF1976D2);
     }

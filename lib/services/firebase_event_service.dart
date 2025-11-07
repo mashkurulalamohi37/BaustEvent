@@ -1,5 +1,6 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import '../models/event.dart';
+import 'firebase_notification_service.dart';
 
 class FirebaseEventService {
   static final FirebaseFirestore _firestore = FirebaseFirestore.instance;
@@ -60,21 +61,40 @@ class FirebaseEventService {
   }
 
   static Future<List<Event>> getEventsByOrganizer(String organizerId) async {
-    final snap = await _eventsCol
-        .where('organizerId', isEqualTo: organizerId)
-        .orderBy('date', descending: false)
-        .get();
-    // Filter out deleted documents
-    return snap.docs
-        .where((d) => d.exists)
-        .map((d) => EventFirestore.fromFirestore(d))
-        .toList();
+    try {
+      // Try with orderBy first (requires index)
+      final snap = await _eventsCol
+          .where('organizerId', isEqualTo: organizerId)
+          .orderBy('date', descending: false)
+          .get();
+      // Filter out deleted documents
+      final events = snap.docs
+          .where((d) => d.exists)
+          .map((d) => EventFirestore.fromFirestore(d))
+          .toList();
+      // Sort manually as fallback
+      events.sort((a, b) => a.date.compareTo(b.date));
+      return events;
+    } catch (e) {
+      // If index doesn't exist, fetch without orderBy and sort manually
+      print('Index not found, fetching without orderBy: $e');
+      final snap = await _eventsCol
+          .where('organizerId', isEqualTo: organizerId)
+          .get();
+      final events = snap.docs
+          .where((d) => d.exists)
+          .map((d) => EventFirestore.fromFirestore(d))
+          .toList();
+      // Sort manually
+      events.sort((a, b) => a.date.compareTo(b.date));
+      return events;
+    }
   }
 
   static Stream<List<Event>> getEventsByOrganizerStream(String organizerId) {
+    // Use query without orderBy to avoid index requirement, then sort manually
     return _eventsCol
         .where('organizerId', isEqualTo: organizerId)
-        .orderBy('date', descending: false)
         .snapshots()
         .map((s) {
           // Log deletions from docChanges
@@ -106,6 +126,8 @@ class FirebaseEventService {
               print('Error parsing event document ${doc.id}: $e');
             }
           }
+          // Sort manually since we're not using orderBy
+          events.sort((a, b) => a.date.compareTo(b.date));
           print('getEventsByOrganizerStream: ${events.length} events (from ${s.docs.length} docs, ${s.docChanges.length} changes)');
           return events;
         })
@@ -182,15 +204,32 @@ class FirebaseEventService {
   }
 
   static Future<List<Event>> getEventsByCategory(String category) async {
-    final snap = await _eventsCol
-        .where('category', isEqualTo: category)
-        .orderBy('date', descending: false)
-        .get();
-    // Filter out deleted documents
-    return snap.docs
-        .where((d) => d.exists)
-        .map((d) => EventFirestore.fromFirestore(d))
-        .toList();
+    try {
+      // Try with orderBy first (requires index)
+      final snap = await _eventsCol
+          .where('category', isEqualTo: category)
+          .orderBy('date', descending: false)
+          .get();
+      final events = snap.docs
+          .where((d) => d.exists)
+          .map((d) => EventFirestore.fromFirestore(d))
+          .toList();
+      events.sort((a, b) => a.date.compareTo(b.date));
+      return events;
+    } catch (e) {
+      // If index doesn't exist, fetch without orderBy and sort manually
+      print('Category index not found, fetching without orderBy: $e');
+      final snap = await _eventsCol
+          .where('category', isEqualTo: category)
+          .get();
+      final events = snap.docs
+          .where((d) => d.exists)
+          .map((d) => EventFirestore.fromFirestore(d))
+          .toList();
+      // Sort manually
+      events.sort((a, b) => a.date.compareTo(b.date));
+      return events;
+    }
   }
 
   // Mutations
@@ -212,6 +251,15 @@ class FirebaseEventService {
       final doc = await _eventsCol.doc(event.id).get();
       if (doc.exists) {
         print('Event document verified in Firestore');
+        
+        // Send notification to all participants about the new event
+        try {
+          await _notifyNewEvent(event);
+        } catch (e) {
+          print('Error sending new event notification: $e');
+          // Don't fail event creation if notification fails
+        }
+        
         return true;
       } else {
         print('WARNING: Event document not found after creation');
@@ -273,8 +321,18 @@ class FirebaseEventService {
 
   static Future<bool> registerForEvent(String eventId, String userId) async {
     try {
+      // Check if user is an admin - admins cannot register for events
+      final userDoc = await _firestore.collection('users').doc(userId).get();
+      if (userDoc.exists) {
+        final userData = userDoc.data();
+        if (userData != null && userData['type'] == 'admin') {
+          print('Admin users cannot register for events');
+          return false;
+        }
+      }
+      
       final ref = _eventsCol.doc(eventId);
-      return await _firestore.runTransaction((tx) async {
+      final success = await _firestore.runTransaction((tx) async {
         final snap = await tx.get(ref);
         if (!snap.exists) return false;
         final event = EventFirestore.fromFirestore(snap);
@@ -284,6 +342,26 @@ class FirebaseEventService {
         tx.update(ref, {'participants': updated});
         return true;
       });
+      
+      // Send registration confirmation notification if successful
+      if (success) {
+        try {
+          final eventDoc = await _eventsCol.doc(eventId).get();
+          if (eventDoc.exists) {
+            final eventData = eventDoc.data();
+            final eventTitle = eventData?['title'] as String? ?? 'Event';
+            await FirebaseNotificationService.sendRegistrationConfirmation(
+              eventTitle: eventTitle,
+              eventId: eventId,
+            );
+          }
+        } catch (e) {
+          print('Error sending registration confirmation: $e');
+          // Don't fail registration if notification fails
+        }
+      }
+      
+      return success;
     } catch (e) {
       return false;
     }
@@ -303,6 +381,20 @@ class FirebaseEventService {
       });
     } catch (e) {
       return false;
+    }
+  }
+  
+  // Notify all participants about a new event
+  static Future<void> _notifyNewEvent(Event event) async {
+    try {
+      await FirebaseNotificationService.notifyNewEventCreated(
+        eventTitle: event.title,
+        eventId: event.id,
+        category: event.category,
+        eventDate: event.date,
+      );
+    } catch (e) {
+      print('Error in _notifyNewEvent: $e');
     }
   }
 }

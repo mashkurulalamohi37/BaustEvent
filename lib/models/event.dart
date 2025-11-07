@@ -174,5 +174,7 @@ enum EventCategory {
   cultural,
   competition,
   conference,
+  ragDay,
+  picnic,
   other,
 }

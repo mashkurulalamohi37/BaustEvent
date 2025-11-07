@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'participant_dashboard.dart';
 import 'organizer_dashboard.dart';
+import 'admin_dashboard.dart';
 import '../models/user.dart';
 import '../services/firebase_user_service.dart';
 
@@ -252,7 +253,7 @@ class _AuthScreenState extends State<AuthScreen> {
     setState(() => _isLoading = true);
 
     if (isLogin) {
-      // Since authentication is removed, we'll create a user or find existing one
+      // Login - validate credentials
       try {
         final user = await FirebaseUserService.signInWithEmailAndPassword(
           _emailController.text.trim(),
@@ -260,44 +261,74 @@ class _AuthScreenState extends State<AuthScreen> {
         );
         
         if (user == null) {
-          // Create user if doesn't exist (since no auth)
-          final newUser = await FirebaseUserService.createUserWithEmailAndPassword(
-            email: _emailController.text.trim(),
-            password: _passwordController.text.trim(),
-            name: _emailController.text.split('@')[0],
-            universityId: 'USER${DateTime.now().millisecondsSinceEpoch}',
-            type: UserType.participant,
-          );
-          
-          if (newUser == null || !mounted) return;
-          
-          Navigator.pushReplacement(
-            context,
-            MaterialPageRoute(
-              builder: (context) => newUser.type == UserType.organizer
-                  ? OrganizerDashboard(userId: newUser.id)
-                  : ParticipantDashboard(userId: newUser.id),
+          // User not found - show error
+          if (!mounted) {
+            setState(() => _isLoading = false);
+            return;
+          }
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Invalid email or password. Please check your credentials and try again.'),
+              backgroundColor: Colors.red,
+              duration: Duration(seconds: 4),
             ),
           );
-        } else {
-          if (!mounted) return;
-          Navigator.pushReplacement(
-            context,
-            MaterialPageRoute(
-              builder: (context) => user.type == UserType.organizer
-                  ? OrganizerDashboard(userId: user.id)
-                  : ParticipantDashboard(userId: user.id),
-            ),
-          );
+          setState(() => _isLoading = false);
+          return;
         }
+        
+        // User found - proceed to dashboard
+        if (!mounted) {
+          setState(() => _isLoading = false);
+          return;
+        }
+          Navigator.pushReplacement(
+            context,
+            MaterialPageRoute(
+              builder: (context) {
+                if (user.isAdmin) {
+                  return AdminDashboard(userId: user.id);
+                } else if (user.type == UserType.organizer) {
+                  return OrganizerDashboard(userId: user.id);
+                } else {
+                  return ParticipantDashboard(userId: user.id);
+                }
+              },
+            ),
+          );
       } catch (e) {
-        if (!mounted) return;
+        if (!mounted) {
+          setState(() => _isLoading = false);
+          return;
+        }
+        
+        String errorMessage = e.toString().replaceFirst('Exception: ', '');
+        
+        // Provide user-friendly error messages
+        if (errorMessage.contains('PERMISSION_DENIED') || 
+            errorMessage.contains('permission-denied')) {
+          errorMessage = 'Permission denied. Please check your Firestore security rules.';
+        } else if (errorMessage.contains('UNAVAILABLE') || 
+                   errorMessage.contains('unavailable')) {
+          errorMessage = 'Unable to connect. Please check your internet connection.';
+        } else if (errorMessage.contains('No account found') ||
+                   errorMessage.contains('user-not-found')) {
+          errorMessage = 'No account found with this email. Please sign up first.';
+        } else if (errorMessage.contains('Invalid password') ||
+                   errorMessage.contains('wrong-password')) {
+          errorMessage = 'Invalid password. Please try again.';
+        } else if (errorMessage.contains('Invalid email or password')) {
+          errorMessage = 'Invalid email or password. Please check your credentials.';
+        }
+        
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('Error: ${e.toString()}'),
+            content: Text(errorMessage),
             backgroundColor: Colors.red,
+            duration: const Duration(seconds: 4),
           ),
         );
+        setState(() => _isLoading = false);
       }
     } else {
       // Create user with Firebase (creates in Firestore)
@@ -321,12 +352,33 @@ class _AuthScreenState extends State<AuthScreen> {
           setState(() => _isLoading = false);
           return;
         }
+        
+        // If user signed up as organizer, show a message about pending approval
+        if (_selectedType == UserType.organizer) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text(
+                'Your organizer request has been submitted and is pending admin approval. You will be notified once approved.',
+                style: TextStyle(fontSize: 14),
+              ),
+              backgroundColor: Colors.blue,
+              duration: Duration(seconds: 5),
+            ),
+          );
+        }
+        
         Navigator.pushReplacement(
           context,
           MaterialPageRoute(
-            builder: (context) => user.type == UserType.organizer
-                ? OrganizerDashboard(userId: user.id)
-                : ParticipantDashboard(userId: user.id),
+            builder: (context) {
+              if (user.isAdmin) {
+                return AdminDashboard(userId: user.id);
+              } else if (user.type == UserType.organizer) {
+                return OrganizerDashboard(userId: user.id);
+              } else {
+                return ParticipantDashboard(userId: user.id);
+              }
+            },
           ),
         );
       } catch (e) {
@@ -348,8 +400,16 @@ class _AuthScreenState extends State<AuthScreen> {
                    errorMessage.contains('not-found')) {
           errorMessage = 'Database not found. Please ensure Firestore is enabled in Firebase Console.';
         } else if (errorMessage.contains('already-exists') || 
-                   errorMessage.contains('already exists')) {
+                   errorMessage.contains('already exists') ||
+                   errorMessage.contains('An account with this email already exists') ||
+                   errorMessage.toLowerCase().contains('email-already-in-use')) {
           errorMessage = 'An account with this email already exists. Please sign in instead.';
+        } else if (errorMessage.contains('weak-password') ||
+                   errorMessage.contains('Password is too weak')) {
+          errorMessage = 'Password is too weak. Please use a stronger password (at least 6 characters).';
+        } else if (errorMessage.contains('invalid-email') ||
+                   errorMessage.contains('Invalid email address')) {
+          errorMessage = 'Invalid email address. Please enter a valid email.';
         } else if (errorMessage.contains('unimplemented') || 
                    errorMessage.contains('not available')) {
           errorMessage = 'Firestore is not properly configured. Please check your Firebase setup.';
@@ -370,5 +430,6 @@ class _AuthScreenState extends State<AuthScreen> {
       setState(() => _isLoading = false);
     }
   }
+
 }
 

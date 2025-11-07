@@ -41,12 +41,15 @@ dependencies:
   intl: ^0.19.0
   uuid: ^4.2.1
   image_picker: ^1.0.6
+  fl_chart: ^0.68.0
   
   # Firebase dependencies
-  firebase_core: ^2.24.2
-  firebase_auth: ^4.15.3
-  cloud_firestore: ^4.13.6
-  firebase_storage: ^11.5.6
+  firebase_core: ^3.6.0
+  firebase_auth: ^5.3.1
+  cloud_firestore: ^5.4.3
+  firebase_storage: ^12.3.2
+  firebase_messaging: ^15.2.10
+  flutter_local_notifications: ^17.0.0
 
 dev_dependencies:
   flutter_test:
@@ -71,10 +74,6 @@ flutter_launcher_icons:
   macos:
     generate: true
     image_path: asset/event-list.png
-  # firebase_storage: ^11.5.6
-  # firebase_messaging: ^14.7.10
-  # firebase_analytics: ^10.7.4
-  # flutter_local_notifications: ^17.0.0
 
 # For information on the generic Dart part of this file, see the
 # following page: https://dart.dev/tools/pub/pubspec
