@@ -2,6 +2,27 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import '../models/event.dart';
 import 'firebase_notification_service.dart';
 
+enum RegistrationStatus {
+  success,
+  alreadyRegistered,
+  eventFull,
+  adminNotAllowed,
+  eventNotFound,
+  permissionDenied,
+  networkError,
+  registrationClosed,
+  error,
+}
+
+class RegistrationResult {
+  final RegistrationStatus status;
+  final String? message;
+
+  const RegistrationResult(this.status, {this.message});
+
+  bool get isSuccess => status == RegistrationStatus.success;
+}
+
 class FirebaseEventService {
   static final FirebaseFirestore _firestore = FirebaseFirestore.instance;
   static CollectionReference<Map<String, dynamic>> get _eventsCol =>
@@ -319,7 +340,7 @@ class FirebaseEventService {
     }
   }
 
-  static Future<bool> registerForEvent(String eventId, String userId) async {
+  static Future<RegistrationResult> registerForEvent(String eventId, String userId) async {
     try {
       // Check if user is an admin - admins cannot register for events
       final userDoc = await _firestore.collection('users').doc(userId).get();
@@ -327,24 +348,41 @@ class FirebaseEventService {
         final userData = userDoc.data();
         if (userData != null && userData['type'] == 'admin') {
           print('Admin users cannot register for events');
-          return false;
+          return const RegistrationResult(
+            RegistrationStatus.adminNotAllowed,
+            message: 'Admins cannot register for events.',
+          );
         }
       }
       
       final ref = _eventsCol.doc(eventId);
-      final success = await _firestore.runTransaction((tx) async {
+      final status = await _firestore.runTransaction((tx) async {
         final snap = await tx.get(ref);
-        if (!snap.exists) return false;
+        if (!snap.exists) {
+          print('registerForEvent: Event $eventId not found during transaction');
+          return RegistrationStatus.eventNotFound;
+        }
         final event = EventFirestore.fromFirestore(snap);
-        if (event.participants.contains(userId)) return true;
-        if (event.participants.length >= event.maxParticipants) return false;
+        if (event.registrationCloseDate != null &&
+            DateTime.now().isAfter(event.registrationCloseDate!)) {
+          print('registerForEvent: Event $eventId registration closed at ${event.registrationCloseDate}');
+          return RegistrationStatus.registrationClosed;
+        }
+        if (event.participants.contains(userId)) {
+          print('registerForEvent: User $userId already registered for event $eventId');
+          return RegistrationStatus.alreadyRegistered;
+        }
+        if (event.participants.length >= event.maxParticipants) {
+          print('registerForEvent: Event $eventId is full (${event.participants.length}/${event.maxParticipants})');
+          return RegistrationStatus.eventFull;
+        }
         final updated = List<String>.from(event.participants)..add(userId);
         tx.update(ref, {'participants': updated});
-        return true;
+        return RegistrationStatus.success;
       });
       
       // Send registration confirmation notification if successful
-      if (success) {
+      if (status == RegistrationStatus.success) {
         try {
           final eventDoc = await _eventsCol.doc(eventId).get();
           if (eventDoc.exists) {
@@ -361,9 +399,59 @@ class FirebaseEventService {
         }
       }
       
-      return success;
-    } catch (e) {
-      return false;
+      return RegistrationResult(
+        status,
+        message: _statusToMessage(status),
+      );
+    } catch (e, stackTrace) {
+      print('Error registering for event $eventId with user $userId: $e');
+      print('Stack trace: $stackTrace');
+      if (e is FirebaseException) {
+        if (e.code == 'permission-denied') {
+          return RegistrationResult(
+            RegistrationStatus.permissionDenied,
+            message: 'You do not have permission to register for this event.',
+          );
+        }
+        if (e.code == 'unavailable' || e.code == 'network-request-failed') {
+          return RegistrationResult(
+            RegistrationStatus.networkError,
+            message: 'Network error occurred. Please check your connection and try again.',
+          );
+        }
+        return RegistrationResult(
+          RegistrationStatus.error,
+          message: e.message ?? 'Failed to update registration. Please try again.',
+        );
+      }
+      return const RegistrationResult(
+        RegistrationStatus.error,
+        message: 'Failed to update registration. Please try again.',
+      );
+    }
+  }
+
+  static String _statusToMessage(RegistrationStatus status) {
+    switch (status) {
+      case RegistrationStatus.success:
+        return 'Registered successfully!';
+      case RegistrationStatus.alreadyRegistered:
+        return 'You are already registered for this event.';
+      case RegistrationStatus.eventFull:
+        return 'This event has reached its participant limit.';
+      case RegistrationStatus.adminNotAllowed:
+        return 'Admins cannot register for events.';
+      case RegistrationStatus.eventNotFound:
+        return 'Unable to find this event. Please refresh and try again.';
+      case RegistrationStatus.registrationClosed:
+        return 'Registration is closed for this event.';
+      case RegistrationStatus.permissionDenied:
+        return 'You do not have permission to register for this event.';
+      case RegistrationStatus.networkError:
+        return 'Network error occurred. Please check your connection and try again.';
+      case RegistrationStatus.error:
+      default:
+        return 'Failed to update registration. Please try again.';
     }
   }
 

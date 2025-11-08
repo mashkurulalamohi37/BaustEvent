@@ -163,18 +163,50 @@ class _EventDetailsScreenState extends State<EventDetailsScreen> {
       return;
     }
     
+    if (_event.isRegistrationClosed) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            _isRegistered
+                ? 'Registration changes are locked for this event.'
+                : 'Registration is closed for this event.',
+          ),
+          backgroundColor: Colors.red,
+          duration: const Duration(seconds: 3),
+        ),
+      );
+      return;
+    }
+    
+    if (!_isRegistered && _event.participants.length >= _event.maxParticipants) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('This event has reached its participant limit.'),
+          backgroundColor: Colors.red,
+          duration: Duration(seconds: 3),
+        ),
+      );
+      return;
+    }
+
     setState(() => _isLoading = true);
 
     try {
-      bool success;
+      RegistrationResult result;
       if (_isRegistered) {
-        success = await FirebaseEventService.unregisterFromEvent(_event.id, userId);
+        final success = await FirebaseEventService.unregisterFromEvent(_event.id, userId);
+        result = success
+            ? const RegistrationResult(RegistrationStatus.success)
+            : const RegistrationResult(
+                RegistrationStatus.error,
+                message: 'Failed to update registration. Please try again.',
+              );
       } else {
         // Additional check in service will prevent duplicate registration
-        success = await FirebaseEventService.registerForEvent(_event.id, userId);
+        result = await FirebaseEventService.registerForEvent(_event.id, userId);
       }
 
-      if (success) {
+      if (result.isSuccess) {
         // Refresh event data
         final updatedEvent = await FirebaseEventService.getAllEvents()
             .then((events) => events.firstWhere((e) => e.id == _event.id));
@@ -194,8 +226,8 @@ class _EventDetailsScreenState extends State<EventDetailsScreen> {
         );
       } else {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Failed to update registration. Please try again.'),
+          SnackBar(
+            content: Text(result.message ?? _mapRegistrationStatusToMessage(result.status)),
             backgroundColor: Colors.red,
           ),
         );
@@ -209,6 +241,28 @@ class _EventDetailsScreenState extends State<EventDetailsScreen> {
       );
     } finally {
       setState(() => _isLoading = false);
+    }
+  }
+
+  String _mapRegistrationStatusToMessage(RegistrationStatus status) {
+    switch (status) {
+      case RegistrationStatus.alreadyRegistered:
+        return 'You are already registered for this event.';
+      case RegistrationStatus.eventFull:
+        return 'This event has reached its participant limit.';
+      case RegistrationStatus.adminNotAllowed:
+        return 'Admins cannot register for events.';
+      case RegistrationStatus.eventNotFound:
+        return 'Unable to find this event. Please refresh and try again.';
+      case RegistrationStatus.registrationClosed:
+        return 'Registration is closed for this event.';
+      case RegistrationStatus.permissionDenied:
+        return 'You do not have permission to register for this event.';
+      case RegistrationStatus.networkError:
+        return 'Network error occurred. Please check your connection and try again.';
+      case RegistrationStatus.error:
+      default:
+        return 'Failed to update registration. Please try again.';
     }
   }
 
@@ -400,6 +454,10 @@ class _EventDetailsScreenState extends State<EventDetailsScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final bool isOrganizerOrAdmin = widget.isOrganizer || (_currentUser?.isAdmin ?? false);
+    final bool registrationClosed = _event.isRegistrationClosed;
+    final DateTime? registrationCloseDate = _event.registrationCloseDate;
+
     return Scaffold(
       appBar: AppBar(
         title: const Text('Event Details'),
@@ -472,6 +530,12 @@ class _EventDetailsScreenState extends State<EventDetailsScreen> {
             _buildDetailRow(Icons.category, 'Category', _event.category),
             _buildDetailRow(Icons.people, 'Participants', 
                 '${_event.participants.length}/${_event.maxParticipants}'),
+            if (registrationCloseDate != null)
+              _buildDetailRow(
+                Icons.lock_clock,
+                registrationClosed ? 'Registration closed' : 'Registration closes',
+                DateFormat('MMM d, y • h:mm a').format(registrationCloseDate.toLocal()),
+              ),
             
             const SizedBox(height: 16),
             
@@ -492,7 +556,7 @@ class _EventDetailsScreenState extends State<EventDetailsScreen> {
             const SizedBox(height: 24),
             
             // Action Buttons
-            if (widget.isOrganizer || (_currentUser?.isAdmin ?? false)) ...[
+            if (isOrganizerOrAdmin) ...[
               // Organizer/Admin actions
               Row(
                 children: [
@@ -537,35 +601,9 @@ class _EventDetailsScreenState extends State<EventDetailsScreen> {
                   ),
                 ],
               ),
-            ] else ...[
-              // Participant actions
-              SizedBox(
-                width: double.infinity,
-                height: 56,
-                child: ElevatedButton(
-                  onPressed: _isLoading ? null : _toggleRegistration,
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: _isRegistered ? Colors.red : const Color(0xFF1976D2),
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                  ),
-                  child: _isLoading
-                      ? const CircularProgressIndicator(color: Colors.white)
-                      : Text(
-                          _isRegistered ? 'Unregister' : 'Register',
-                          style: const TextStyle(
-                            fontSize: 18,
-                            fontWeight: FontWeight.w600,
-                            color: Colors.white,
-                          ),
-                        ),
-                ),
-              ),
               const SizedBox(height: 12),
               Row(
                 children: [
-                  // Mark as Done button (only if not already completed)
                   if (_event.status != EventStatus.completed)
                     Expanded(
                       child: ElevatedButton.icon(
@@ -584,7 +622,6 @@ class _EventDetailsScreenState extends State<EventDetailsScreen> {
                       ),
                     ),
                   if (_event.status != EventStatus.completed) const SizedBox(width: 12),
-                  // Delete button
                   Expanded(
                     child: ElevatedButton.icon(
                       onPressed: _isLoading ? null : _deleteEvent,
@@ -603,6 +640,47 @@ class _EventDetailsScreenState extends State<EventDetailsScreen> {
                   ),
                 ],
               ),
+            ] else ...[
+              // Participant actions
+              SizedBox(
+                width: double.infinity,
+                height: 56,
+                child: ElevatedButton(
+                  onPressed: (_isLoading || registrationClosed) ? null : _toggleRegistration,
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: registrationClosed
+                        ? Colors.grey
+                        : (_isRegistered ? Colors.red : const Color(0xFF1976D2)),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                  ),
+                  child: _isLoading
+                      ? const CircularProgressIndicator(color: Colors.white)
+                      : Text(
+                          registrationClosed
+                              ? (_isRegistered ? 'Registration Locked' : 'Registration Closed')
+                              : (_isRegistered ? 'Unregister' : 'Register'),
+                          style: const TextStyle(
+                            fontSize: 18,
+                            fontWeight: FontWeight.w600,
+                            color: Colors.white,
+                          ),
+                        ),
+                ),
+              ),
+              if (registrationClosed && registrationCloseDate != null)
+                Padding(
+                  padding: const EdgeInsets.only(top: 12.0),
+                  child: Text(
+                    'Registration closed on ${DateFormat('MMM d, y • h:mm a').format(registrationCloseDate.toLocal())}.',
+                    style: TextStyle(
+                      color: Colors.red.shade700,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ),
+              const SizedBox(height: 12),
             ],
           ],
         ),

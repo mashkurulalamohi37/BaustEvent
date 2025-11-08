@@ -161,9 +161,19 @@ class _ManageParticipantsScreenState extends State<ManageParticipantsScreen> {
       return;
     }
 
+    if (_participants.length >= widget.event.maxParticipants) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('This event has reached its participant limit.'),
+          backgroundColor: Colors.red,
+        ),
+      );
+      return;
+    }
+
     // Register user for event
-    final success = await FirebaseEventService.registerForEvent(eventId, userId);
-    if (success) {
+    final result = await FirebaseEventService.registerForEvent(eventId, userId);
+    if (result.isSuccess) {
       await _loadParticipants();
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
@@ -173,11 +183,33 @@ class _ManageParticipantsScreenState extends State<ManageParticipantsScreen> {
       );
     } else {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Failed to register user'),
+        SnackBar(
+          content: Text(result.message ?? _mapRegistrationStatusToMessage(result.status)),
           backgroundColor: Colors.red,
         ),
       );
+    }
+  }
+
+  String _mapRegistrationStatusToMessage(RegistrationStatus status) {
+    switch (status) {
+      case RegistrationStatus.alreadyRegistered:
+        return 'User is already registered for this event.';
+      case RegistrationStatus.eventFull:
+        return 'This event has reached its participant limit.';
+      case RegistrationStatus.adminNotAllowed:
+        return 'Admins cannot register for events.';
+      case RegistrationStatus.eventNotFound:
+        return 'Unable to find this event. Please refresh and try again.';
+      case RegistrationStatus.registrationClosed:
+        return 'Registration is closed for this event.';
+      case RegistrationStatus.permissionDenied:
+        return 'You do not have permission to register for this event.';
+      case RegistrationStatus.networkError:
+        return 'Network error occurred. Please check your connection and try again.';
+      case RegistrationStatus.error:
+      default:
+        return 'Failed to register user.';
     }
   }
 

@@ -28,12 +28,15 @@ class _EditEventScreenState extends State<EditEventScreen> {
   final _maxParticipantsController = TextEditingController();
   
   DateTime? _selectedDate;
+  TimeOfDay? _selectedTime;
   String _selectedCategory = 'Seminars';
   EventStatus _selectedStatus = EventStatus.published;
   bool _isLoading = false;
   User? _currentUser;
   XFile? _selectedImage;
   String? _currentImageUrl;
+  DateTime? _registrationCloseDate;
+  final TextEditingController _registrationCloseController = TextEditingController();
 
   final List<String> _categories = [
     'Seminars',
@@ -64,6 +67,14 @@ class _EditEventScreenState extends State<EditEventScreen> {
     _selectedCategory = event.category;
     _selectedStatus = event.status;
     _currentImageUrl = event.imageUrl;
+    _selectedTime = _parseTimeOfDay(event.time);
+    _registrationCloseDate = event.registrationCloseDate;
+    if (_registrationCloseDate != null) {
+      _registrationCloseController.text =
+          DateFormat('MMM d, y • h:mm a').format(_registrationCloseDate!.toLocal());
+    } else {
+      _registrationCloseController.clear();
+    }
   }
 
   Future<void> _pickImage() async {
@@ -118,6 +129,7 @@ class _EditEventScreenState extends State<EditEventScreen> {
     _locationController.dispose();
     _timeController.dispose();
     _maxParticipantsController.dispose();
+    _registrationCloseController.dispose();
     super.dispose();
   }
 
@@ -141,8 +153,87 @@ class _EditEventScreenState extends State<EditEventScreen> {
     );
     
     if (time != null) {
-      setState(() => _timeController.text = time.format(context));
+      setState(() {
+        _selectedTime = time;
+        _timeController.text = time.format(context);
+      });
     }
+  }
+
+  TimeOfDay? _parseTimeOfDay(String value) {
+    try {
+      final dt = DateFormat.jm().parse(value);
+      return TimeOfDay(hour: dt.hour, minute: dt.minute);
+    } catch (_) {
+      return null;
+    }
+  }
+
+  Future<void> _selectRegistrationCloseDateTime() async {
+    final initialDate = _registrationCloseDate ?? _selectedDate ?? DateTime.now();
+    final date = await showDatePicker(
+      context: context,
+      initialDate: initialDate.isBefore(DateTime.now()) ? DateTime.now() : initialDate,
+      firstDate: DateTime.now(),
+      lastDate: DateTime.now().add(const Duration(days: 365)),
+    );
+
+    if (date == null) {
+      return;
+    }
+
+    final initialTime = _registrationCloseDate != null
+        ? TimeOfDay(hour: _registrationCloseDate!.hour, minute: _registrationCloseDate!.minute)
+        : (_selectedTime ?? _parseTimeOfDay(_timeController.text)) ??
+            TimeOfDay.now();
+
+    final time = await showTimePicker(
+      context: context,
+      initialTime: initialTime,
+    );
+
+    if (time == null) {
+      return;
+    }
+
+    final selected = DateTime(date.year, date.month, date.day, time.hour, time.minute);
+    final now = DateTime.now();
+
+    if (selected.isBefore(now)) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Registration close time must be in the future.'),
+          backgroundColor: Colors.red,
+        ),
+      );
+      return;
+    }
+
+    final effectiveTime = _selectedTime ?? _parseTimeOfDay(_timeController.text);
+    if (_selectedDate != null && effectiveTime != null) {
+      final eventDateTime = DateTime(
+        _selectedDate!.year,
+        _selectedDate!.month,
+        _selectedDate!.day,
+        effectiveTime.hour,
+        effectiveTime.minute,
+      );
+      if (selected.isAfter(eventDateTime)) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Registration must close before the event starts.'),
+            backgroundColor: Colors.red,
+          ),
+        );
+        return;
+      }
+    }
+
+    setState(() {
+      _registrationCloseDate = selected;
+      _registrationCloseController.text =
+          DateFormat('MMM d, y • h:mm a').format(selected);
+    });
   }
 
   Future<void> _updateEvent() async {
@@ -156,6 +247,48 @@ class _EditEventScreenState extends State<EditEventScreen> {
         );
       }
       return;
+    }
+
+    final effectiveTime = _selectedTime ?? _parseTimeOfDay(_timeController.text);
+    if (effectiveTime == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Please select a valid event time.'),
+          backgroundColor: Colors.red,
+        ),
+      );
+      return;
+    }
+
+    if (_registrationCloseDate != null) {
+      final now = DateTime.now();
+      if (_registrationCloseDate!.isBefore(now)) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Registration close time must be in the future.'),
+            backgroundColor: Colors.red,
+          ),
+        );
+        return;
+      }
+
+      final eventDateTime = DateTime(
+        _selectedDate!.year,
+        _selectedDate!.month,
+        _selectedDate!.day,
+        effectiveTime.hour,
+        effectiveTime.minute,
+      );
+
+      if (_registrationCloseDate!.isAfter(eventDateTime)) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Registration must close before the event starts.'),
+            backgroundColor: Colors.red,
+          ),
+        );
+        return;
+      }
     }
 
     setState(() => _isLoading = true);
@@ -178,6 +311,8 @@ class _EditEventScreenState extends State<EditEventScreen> {
         maxParticipants: int.tryParse(_maxParticipantsController.text) ?? 100,
         status: _selectedStatus,
         imageUrl: imageUrl,
+        registrationCloseDate: _registrationCloseDate,
+        registrationCloseDateSet: true,
       );
 
       final success = await FirebaseEventService.updateEvent(updatedEvent);
@@ -345,6 +480,31 @@ class _EditEventScreenState extends State<EditEventScreen> {
                     ),
                   ),
                 ],
+              ),
+              const SizedBox(height: 16),
+              
+              CustomTextField(
+                controller: _registrationCloseController,
+                label: 'Registration closes at (optional)',
+                hint: 'Tap to set closing time',
+                icon: Icons.lock_clock,
+                readOnly: true,
+                onTap: _selectRegistrationCloseDateTime,
+              ),
+              Align(
+                alignment: Alignment.centerRight,
+                child: TextButton.icon(
+                  onPressed: _registrationCloseDate == null
+                      ? null
+                      : () {
+                          setState(() {
+                            _registrationCloseDate = null;
+                            _registrationCloseController.clear();
+                          });
+                        },
+                  icon: const Icon(Icons.clear),
+                  label: const Text('Clear registration lock'),
+                ),
               ),
               const SizedBox(height: 16),
               

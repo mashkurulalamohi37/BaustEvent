@@ -49,6 +49,34 @@ service cloud.firestore {
     match /events/{eventId} {
       // Anyone authenticated can read events
       allow read: if isAuthenticated();
+
+      function isOrganizerOrAdminUpdatingOwnEvent() {
+        return isAuthenticated() && (
+          (isOrganizer(getUserId()) && resource.data.organizerId == getUserId()) ||
+          isAdmin(getUserId())
+        );
+      }
+
+      function isParticipantUpdatingRegistration() {
+        let uid = getUserId();
+        let current = resource.data.participants == null ? [] : resource.data.participants;
+        let next = request.resource.data.participants == null ? [] : request.resource.data.participants;
+        let allowedNext = current.concat([uid]);
+        let wasRegistered = current.hasAny([uid]);
+        let willBeRegistered = next.hasAny([uid]);
+        let sizeDiff = next.size() - current.size();
+
+        return isAuthenticated() &&
+               isParticipant(uid) &&
+               request.resource.data.diff(resource.data).changedKeys().hasOnly(['participants']) &&
+               next.hasOnly(allowedNext) &&
+               current.hasOnly(next.concat([uid])) &&
+               (
+                 (!wasRegistered && willBeRegistered && sizeDiff == 1) ||
+                 (wasRegistered && !willBeRegistered && sizeDiff == -1) ||
+                 (wasRegistered && willBeRegistered && sizeDiff == 0)
+               );
+      }
       
       // Only organizers can create events (admins can also create)
       allow create: if isAuthenticated() && (
@@ -57,10 +85,7 @@ service cloud.firestore {
       );
       
       // Event organizer or admin can update events
-      allow update: if isAuthenticated() && (
-        (isOrganizer(getUserId()) && resource.data.organizerId == getUserId()) ||
-        isAdmin(getUserId())
-      );
+      allow update: if isOrganizerOrAdminUpdatingOwnEvent() || isParticipantUpdatingRegistration();
       
       // Event organizer or admin can delete events
       allow delete: if isAuthenticated() && (

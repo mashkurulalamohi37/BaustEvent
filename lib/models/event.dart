@@ -12,6 +12,7 @@ class Event {
   final EventStatus status;
   final int maxParticipants;
   final String? imageUrl;
+  final DateTime? registrationCloseDate;
 
   const Event({
     required this.id,
@@ -26,6 +27,7 @@ class Event {
     this.status = EventStatus.draft,
     this.maxParticipants = 100,
     this.imageUrl,
+    this.registrationCloseDate,
   });
 
   // JSON serialization
@@ -43,6 +45,7 @@ class Event {
       'status': status.name,
       'maxParticipants': maxParticipants,
       'imageUrl': imageUrl,
+      'registrationCloseDate': registrationCloseDate?.toIso8601String(),
     };
   }
 
@@ -63,6 +66,9 @@ class Event {
       ),
       maxParticipants: json['maxParticipants'] ?? 100,
       imageUrl: json['imageUrl'],
+      registrationCloseDate: json['registrationCloseDate'] != null
+          ? DateTime.tryParse(json['registrationCloseDate'])
+          : null,
     );
   }
 
@@ -80,6 +86,8 @@ class Event {
     EventStatus? status,
     int? maxParticipants,
     String? imageUrl,
+    DateTime? registrationCloseDate,
+    bool registrationCloseDateSet = false,
   }) {
     return Event(
       id: id ?? this.id,
@@ -94,7 +102,19 @@ class Event {
       status: status ?? this.status,
       maxParticipants: maxParticipants ?? this.maxParticipants,
       imageUrl: imageUrl ?? this.imageUrl,
+      registrationCloseDate: registrationCloseDateSet
+          ? registrationCloseDate
+          : this.registrationCloseDate,
     );
+  }
+
+  bool get isRegistrationClosed {
+    if (registrationCloseDate == null) return false;
+    final now = DateTime.now();
+    final cutoff = registrationCloseDate!.isUtc
+        ? registrationCloseDate!.toLocal()
+        : registrationCloseDate!;
+    return now.isAfter(cutoff);
   }
 
 }
@@ -115,6 +135,7 @@ extension EventFirestore on Event {
       'status': status.name,
       'maxParticipants': maxParticipants,
       'imageUrl': imageUrl,
+      'registrationCloseDate': registrationCloseDate?.toIso8601String(),
     };
   }
 
@@ -156,6 +177,9 @@ extension EventFirestore on Event {
       ),
       maxParticipants: (data['maxParticipants'] as int?) ?? 100,
       imageUrl: data['imageUrl'] as String?,
+      registrationCloseDate: data['registrationCloseDate'] != null
+          ? _parseDate(data['registrationCloseDate'])
+          : null,
     );
   }
 }

@@ -37,6 +37,7 @@ class _ParticipantDashboardState extends State<ParticipantDashboard> {
   bool _isLoading = true;
   String _selectedCategory = '';
   bool _hasPendingOrganizerRequest = false;
+  bool _showPastOnly = false;
 
   @override
   void initState() {
@@ -364,6 +365,7 @@ class _ParticipantDashboardState extends State<ParticipantDashboard> {
           ? _allEvents 
           : _allEvents.where((e) => e.category == _selectedCategory).toList();
       setState(() {
+      _showPastOnly = false;
         _filteredEvents = filtered;
         _categorizeEvents(filtered);
       });
@@ -379,6 +381,7 @@ class _ParticipantDashboardState extends State<ParticipantDashboard> {
         : results.where((e) => e.category == _selectedCategory).toList();
     
     setState(() {
+    _showPastOnly = false;
       _filteredEvents = filteredResults;
       // Also categorize search results
       _categorizeEvents(filteredResults);
@@ -392,11 +395,17 @@ class _ParticipantDashboardState extends State<ParticipantDashboard> {
     List<Event> eventsToCategorize;
     if (category.isEmpty) {
       eventsToCategorize = _allEvents;
-      setState(() => _filteredEvents = _allEvents);
+    setState(() {
+      _showPastOnly = false;
+      _filteredEvents = _allEvents;
+    });
     } else {
       // Filter from all events by category (client-side filtering is faster)
       eventsToCategorize = _allEvents.where((e) => e.category == category).toList();
-      setState(() => _filteredEvents = eventsToCategorize);
+    setState(() {
+      _showPastOnly = false;
+      _filteredEvents = eventsToCategorize;
+    });
     }
     
     // Re-categorize the filtered events
@@ -539,10 +548,32 @@ class _ParticipantDashboardState extends State<ParticipantDashboard> {
       return;
     }
 
-    final success = await FirebaseEventService.registerForEvent(event.id, userId);
-    print('Registration result: $success');
+    if (event.isRegistrationClosed) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Registration is closed for this event.'),
+          backgroundColor: Colors.red,
+          duration: Duration(seconds: 3),
+        ),
+      );
+      return;
+    }
+
+    if (event.participants.length >= event.maxParticipants) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('This event has reached its participant limit.'),
+          backgroundColor: Colors.red,
+          duration: Duration(seconds: 3),
+        ),
+      );
+      return;
+    }
+
+    final result = await FirebaseEventService.registerForEvent(event.id, userId);
+    print('Registration result: ${result.status} message: ${result.message}');
     
-    if (success) {
+    if (result.isSuccess) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
           content: Text('Registered successfully!'),
@@ -557,13 +588,35 @@ class _ParticipantDashboardState extends State<ParticipantDashboard> {
       _navigateToEventDetails(updated);
     } else {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Registration failed. Please try again.'),
+        SnackBar(
+          content: Text(result.message ?? _mapRegistrationStatusToMessage(result.status)),
           backgroundColor: Colors.red,
         ),
       );
     }
   }
+  String _mapRegistrationStatusToMessage(RegistrationStatus status) {
+    switch (status) {
+      case RegistrationStatus.alreadyRegistered:
+        return 'You are already registered for this event.';
+      case RegistrationStatus.eventFull:
+        return 'This event has reached its participant limit.';
+      case RegistrationStatus.adminNotAllowed:
+        return 'Admins cannot register for events.';
+      case RegistrationStatus.eventNotFound:
+        return 'Unable to find this event. Please refresh and try again.';
+      case RegistrationStatus.registrationClosed:
+        return 'Registration is closed for this event.';
+      case RegistrationStatus.permissionDenied:
+        return 'You do not have permission to register for this event.';
+      case RegistrationStatus.networkError:
+        return 'Network error occurred. Please check your connection and try again.';
+      case RegistrationStatus.error:
+      default:
+        return 'Registration failed. Please try again.';
+    }
+  }
+
 
 
   @override
@@ -787,6 +840,7 @@ class _ParticipantDashboardState extends State<ParticipantDashboard> {
                       onFavorite: () => _toggleFavorite(event),
                       isRegistered: isRegistered,
                       imageUrl: event.imageUrl,
+                  registrationClosed: event.isRegistrationClosed,
                     ),
                   );
                 }),
@@ -905,7 +959,7 @@ class _ParticipantDashboardState extends State<ParticipantDashboard> {
                     icon: _getCategoryIcon(event.category),
                     color: _getCategoryColor(event.category),
                     onTap: () => _navigateToEventDetails(event),
-                    onRegister: () => _registerForEvent(event),
+                    onRegister: null,
                     onFavorite: () => _toggleFavorite(event),
                     isRegistered: isRegistered,
                     imageUrl: event.imageUrl,
@@ -972,6 +1026,7 @@ class _ParticipantDashboardState extends State<ParticipantDashboard> {
                     onFavorite: () => _toggleFavorite(event),
                     isRegistered: isRegistered,
                     imageUrl: event.imageUrl,
+                    registrationClosed: event.isRegistrationClosed,
                   ),
                 );
               }),
@@ -1031,10 +1086,11 @@ class _ParticipantDashboardState extends State<ParticipantDashboard> {
                     icon: _getCategoryIcon(event.category),
                     color: _getCategoryColor(event.category),
                     onTap: () => _navigateToEventDetails(event),
-                    onRegister: () => _registerForEvent(event),
+                    onRegister: null,
                     onFavorite: () => _toggleFavorite(event),
                     isRegistered: isRegistered,
                     imageUrl: event.imageUrl,
+                    registrationClosed: event.isRegistrationClosed,
                   ),
                 );
               }),
@@ -1043,7 +1099,13 @@ class _ParticipantDashboardState extends State<ParticipantDashboard> {
                   padding: const EdgeInsets.only(bottom: 24),
                   child: TextButton(
                     onPressed: () {
-                      setState(() => _selectedIndex = 1); // Switch to search tab
+                      _searchController.clear();
+                      setState(() {
+                        _selectedCategory = '';
+                        _filteredEvents = _allEvents;
+                        _showPastOnly = true;
+                        _selectedIndex = 1; // Switch to search tab
+                      });
                     },
                     child: const Text('View All Past Events'),
                   ),
@@ -1074,7 +1136,31 @@ class _ParticipantDashboardState extends State<ParticipantDashboard> {
   Widget _buildSearchScreen() {
     // Check if there's an active search query
     final hasSearchQuery = _searchController.text.isNotEmpty;
-    final displayEvents = hasSearchQuery ? _filteredEvents : _allEvents;
+    final hasCategoryFilter = _selectedCategory.isNotEmpty;
+    List<Event> displayEvents;
+    if (_showPastOnly) {
+      final now = DateTime.now();
+      final today = DateTime(now.year, now.month, now.day);
+      displayEvents = _allEvents
+          .where((event) {
+            final eventDate = DateTime(event.date.year, event.date.month, event.date.day);
+            return eventDate.isBefore(today);
+          })
+          .toList()
+        ..sort((a, b) => b.date.compareTo(a.date));
+    } else if (hasSearchQuery || hasCategoryFilter) {
+      displayEvents = _filteredEvents;
+    } else {
+      displayEvents = _allEvents;
+    }
+    
+    final headerText = _showPastOnly
+        ? 'Past Events (${displayEvents.length})'
+        : hasSearchQuery
+            ? 'Search Results (${displayEvents.length})'
+            : hasCategoryFilter
+                ? '${_selectedCategory[0].toUpperCase()}${_selectedCategory.substring(1)} Events (${displayEvents.length})'
+                : 'All Events (${displayEvents.length})';
     
     return RefreshIndicator(
       onRefresh: _refreshData,
@@ -1100,14 +1186,28 @@ class _ParticipantDashboardState extends State<ParticipantDashboard> {
             ),
             const SizedBox(height: 20),
             Text(
-              hasSearchQuery 
-                  ? 'Search Results (${_filteredEvents.length})'
-                  : 'All Events (${_allEvents.length})',
+              headerText,
               style: const TextStyle(
                 fontSize: 18,
                 fontWeight: FontWeight.bold,
               ),
             ),
+            if (_showPastOnly)
+              Padding(
+                padding: const EdgeInsets.only(top: 8.0),
+                child: Align(
+                  alignment: Alignment.centerRight,
+                  child: TextButton.icon(
+                    onPressed: () {
+                      setState(() {
+                        _showPastOnly = false;
+                      });
+                    },
+                    icon: const Icon(Icons.clear),
+                    label: const Text('Show All Events'),
+                  ),
+                ),
+              ),
             const SizedBox(height: 16),
             Expanded(
               child: displayEvents.isEmpty
@@ -1147,10 +1247,11 @@ class _ParticipantDashboardState extends State<ParticipantDashboard> {
                             icon: _getCategoryIcon(event.category),
                             color: _getCategoryColor(event.category),
                             onTap: () => _navigateToEventDetails(event),
-                            onRegister: () => _registerForEvent(event),
+                            onRegister: _showPastOnly ? null : () => _registerForEvent(event),
                             onFavorite: () => _toggleFavorite(event),
                             isRegistered: isRegistered,
                             imageUrl: event.imageUrl,
+                            registrationClosed: event.isRegistrationClosed,
                           ),
                         );
                       },

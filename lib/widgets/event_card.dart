@@ -13,6 +13,7 @@ class EventCard extends StatelessWidget {
   final VoidCallback? onTap;
   final bool isRegistered;
   final String? imageUrl;
+  final bool registrationClosed;
 
   const EventCard({
     super.key,
@@ -28,6 +29,7 @@ class EventCard extends StatelessWidget {
     this.onTap,
     this.isRegistered = false,
     this.imageUrl,
+    this.registrationClosed = false,
   });
 
   @override
@@ -147,9 +149,9 @@ class EventCard extends StatelessWidget {
                       ),
                       const SizedBox(width: 8),
                       ElevatedButton(
-                        onPressed: isRegistered ? null : onRegister,
+                        onPressed: registrationClosed || isRegistered ? null : onRegister,
                         style: ElevatedButton.styleFrom(
-                          backgroundColor: isRegistered ? Colors.grey : color,
+                          backgroundColor: registrationClosed || isRegistered ? Colors.grey : color,
                           disabledBackgroundColor: Colors.grey,
                           shape: RoundedRectangleBorder(
                             borderRadius: BorderRadius.circular(8),
@@ -157,7 +159,11 @@ class EventCard extends StatelessWidget {
                           padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
                         ),
                         child: Text(
-                          isRegistered ? 'Registered' : 'Register',
+                          registrationClosed
+                              ? (isRegistered ? 'Registration Locked' : 'Registration Closed')
+                              : isRegistered
+                                  ? 'Registered'
+                                  : 'Register',
                           style: const TextStyle(
                             fontSize: 12,
                             color: Colors.white,
