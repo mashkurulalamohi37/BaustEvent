@@ -9,7 +9,6 @@ class EventCard extends StatelessWidget {
   final IconData icon;
   final Color color;
   final VoidCallback? onRegister;
-  final VoidCallback? onFavorite;
   final VoidCallback? onTap;
   final bool isRegistered;
   final String? imageUrl;
@@ -23,9 +22,8 @@ class EventCard extends StatelessWidget {
     required this.time,
     required this.location,
     required this.icon,
-    required this.color,
+    required     this.color,
     this.onRegister,
-    this.onFavorite,
     this.onTap,
     this.isRegistered = false,
     this.imageUrl,
@@ -116,10 +114,6 @@ class EventCard extends StatelessWidget {
                           ],
                         ),
                       ),
-                      IconButton(
-                        icon: const Icon(Icons.favorite_border),
-                        onPressed: onFavorite,
-                      ),
                     ],
                   ),
                   const SizedBox(height: 8),
@@ -149,10 +143,18 @@ class EventCard extends StatelessWidget {
                       ),
                       const SizedBox(width: 8),
                       ElevatedButton(
-                        onPressed: registrationClosed || isRegistered ? null : onRegister,
+                        onPressed: registrationClosed ? null : (isRegistered ? null : onRegister),
                         style: ElevatedButton.styleFrom(
-                          backgroundColor: registrationClosed || isRegistered ? Colors.grey : color,
-                          disabledBackgroundColor: Colors.grey,
+                          backgroundColor: registrationClosed
+                              ? Colors.grey
+                              : (isRegistered
+                                  ? Colors.green
+                                  : color),
+                          disabledBackgroundColor: registrationClosed
+                              ? Colors.grey
+                              : (isRegistered
+                                  ? Colors.green
+                                  : color),
                           shape: RoundedRectangleBorder(
                             borderRadius: BorderRadius.circular(8),
                           ),

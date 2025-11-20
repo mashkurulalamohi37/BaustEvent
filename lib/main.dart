@@ -52,14 +52,8 @@ class LoadingScreen extends StatelessWidget {
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   
-  // Show loading screen immediately
-  runApp(const MaterialApp(
-    home: LoadingScreen(),
-    debugShowCheckedModeBanner: false,
-  ));
-  
   try {
-    // Initialize Firebase
+    // Initialize Firebase first
     await Firebase.initializeApp();
     print('Firebase initialized');
     
@@ -69,9 +63,10 @@ void main() async {
     });
   } catch (e) {
     print('Firebase initialization failed: $e');
+    // Continue anyway - the app will show error if needed
   }
   
-  // After initialization, show the main app
+  // Run the app after initialization
   runApp(const EventBridgeApp());
 }
 
@@ -124,8 +119,15 @@ class _AuthWrapperState extends State<AuthWrapper> {
 
   Future<void> _checkAuthState() async {
     try {
-      // Check if user is already logged in
-      final user = await FirebaseUserService.getCurrentUserWithDetails();
+      // Check if user is already logged in with timeout to prevent hanging
+      final user = await FirebaseUserService.getCurrentUserWithDetails()
+          .timeout(
+            const Duration(seconds: 10),
+            onTimeout: () {
+              print('Auth check timed out');
+              return null;
+            },
+          );
       if (mounted) {
         setState(() {
           _currentUser = user;

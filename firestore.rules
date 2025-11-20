@@ -123,6 +123,39 @@ service cloud.firestore {
       allow delete: if isAuthenticated() && isAdmin(getUserId());
     }
     
+    // Event Participants collection - stores participant registration info
+    match /event_participants/{participantId} {
+      // Organizers and admins can read all participant info for their events
+      allow read: if isAuthenticated() && (
+        isAdmin(getUserId()) ||
+        isOrganizer(getUserId())
+      );
+      
+      // Participants can read their own registration info
+      allow read: if isAuthenticated() && 
+        (!exists(/databases/$(database)/documents/event_participants/$(participantId)) || 
+         resource.data.userId == getUserId());
+      
+      // Participants can write (create/update) their own registration info
+      allow write: if isAuthenticated() && 
+        request.resource.data.userId == getUserId() &&
+        request.resource.data.eventId != null &&
+        (!exists(/databases/$(database)/documents/event_participants/$(participantId)) || 
+         resource.data.userId == getUserId());
+      
+      // Organizers and admins can update participant info (for approvals/rejections)
+      allow update: if isAuthenticated() && (
+        isAdmin(getUserId()) ||
+        isOrganizer(getUserId())
+      );
+      
+      // Organizers and admins can delete participant info
+      allow delete: if isAuthenticated() && (
+        isAdmin(getUserId()) ||
+        isOrganizer(getUserId())
+      );
+    }
+    
     // Default deny all other access
     match /{document=**} {
       allow read, write: if false;

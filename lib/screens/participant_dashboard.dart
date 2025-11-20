@@ -6,6 +6,7 @@ import 'event_details_screen.dart';
 import 'welcome_screen.dart';
 import '../models/event.dart';
 import '../models/user.dart';
+import '../models/participant_registration_info.dart';
 import '../services/firebase_event_service.dart';
 import '../services/firebase_user_service.dart';
 import '../services/firebase_notification_service.dart';
@@ -13,6 +14,7 @@ import '../widgets/event_card.dart';
 import '../widgets/category_card.dart';
 import 'edit_profile_screen.dart';
 import 'notifications_screen.dart';
+import 'participant_registration_form_screen.dart';
 
 class ParticipantDashboard extends StatefulWidget {
   final String? userId;
@@ -53,6 +55,7 @@ class _ParticipantDashboardState extends State<ParticipantDashboard> {
   StreamSubscription<List<Event>>? _myEventsSubscription;
   StreamSubscription<QuerySnapshot>? _notificationSubscription;
   Set<String> _shownNotificationIds = {}; // Track which notifications we've already shown
+  DateTime? _notificationListenerStartTime; // Track when listener was initialized
 
   @override
   void dispose() {
@@ -189,6 +192,20 @@ class _ParticipantDashboardState extends State<ParticipantDashboard> {
       final notificationsCol = FirebaseFirestore.instance.collection('notifications');
       _notificationSubscription?.cancel();
       
+      // Mark listener start time - only show notifications created AFTER this time
+      _notificationListenerStartTime = DateTime.now();
+      
+      // First, mark all existing notifications as shown (so they don't trigger on initial load)
+      notificationsCol
+          .where('read', isEqualTo: false)
+          .get()
+          .then((snapshot) {
+        for (var doc in snapshot.docs) {
+          _shownNotificationIds.add(doc.id);
+        }
+        print('Marked ${snapshot.docs.length} existing notifications as shown');
+      });
+      
       // Listen to all unread notifications (not just new_event)
       _notificationSubscription = notificationsCol
           .where('read', isEqualTo: false)
@@ -209,6 +226,20 @@ class _ParticipantDashboardState extends State<ParticipantDashboard> {
             }
             
             final data = doc.data();
+            
+            // Only show notifications created AFTER the listener was initialized
+            if (_notificationListenerStartTime != null) {
+              final createdAtStr = data['createdAt'] as String?;
+              if (createdAtStr != null) {
+                final createdAt = DateTime.tryParse(createdAtStr);
+                if (createdAt != null && createdAt.isBefore(_notificationListenerStartTime!)) {
+                  print('Skipping old notification created before listener initialization: $notificationId');
+                  _shownNotificationIds.add(notificationId);
+                  continue;
+                }
+              }
+            }
+            
             final type = data['type'] as String?;
             final eventTitle = data['eventTitle'] as String? ?? 'Event';
             final eventId = data['eventId'] as String? ?? '';
@@ -282,6 +313,21 @@ class _ParticipantDashboardState extends State<ParticipantDashboard> {
       print('Setting up fallback notification listener (without orderBy)...');
       final notificationsCol = FirebaseFirestore.instance.collection('notifications');
       _notificationSubscription?.cancel();
+      
+      // Mark listener start time
+      _notificationListenerStartTime ??= DateTime.now();
+      
+      // Mark all existing notifications as shown
+      notificationsCol
+          .where('read', isEqualTo: false)
+          .get()
+          .then((snapshot) {
+        for (var doc in snapshot.docs) {
+          _shownNotificationIds.add(doc.id);
+        }
+        print('Marked ${snapshot.docs.length} existing notifications as shown (fallback)');
+      });
+      
       _notificationSubscription = notificationsCol
           .where('read', isEqualTo: false)
           .snapshots()
@@ -299,6 +345,19 @@ class _ParticipantDashboardState extends State<ParticipantDashboard> {
             }
             
             final data = doc.data();
+            
+            // Only show notifications created AFTER the listener was initialized
+            if (_notificationListenerStartTime != null) {
+              final createdAtStr = data['createdAt'] as String?;
+              if (createdAtStr != null) {
+                final createdAt = DateTime.tryParse(createdAtStr);
+                if (createdAt != null && createdAt.isBefore(_notificationListenerStartTime!)) {
+                  _shownNotificationIds.add(notificationId);
+                  continue;
+                }
+              }
+            }
+            
             final type = data['type'] as String?;
             final eventTitle = data['eventTitle'] as String? ?? 'Event';
             final eventId = data['eventId'] as String? ?? '';
@@ -548,6 +607,18 @@ class _ParticipantDashboardState extends State<ParticipantDashboard> {
       return;
     }
 
+    // Check if event date has passed - participants cannot register for past events
+    if (event.isEventDatePassed) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Cannot register for a past event.'),
+          backgroundColor: Colors.red,
+          duration: Duration(seconds: 3),
+        ),
+      );
+      return;
+    }
+
     if (event.isRegistrationClosed) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
@@ -568,6 +639,47 @@ class _ParticipantDashboardState extends State<ParticipantDashboard> {
         ),
       );
       return;
+    }
+
+    // Check if participant information is required
+    final hasRequiredFields = event.requireLevel ||
+        event.requireTerm ||
+        event.requireBatch ||
+        event.requireSection ||
+        event.requireTshirtSize ||
+        event.requireFood ||
+        event.requireHall ||
+        event.requireGender ||
+        event.requirePersonalNumber ||
+        event.requireGuardianNumber;
+    
+    ParticipantRegistrationInfo? registrationInfo;
+    if (hasRequiredFields) {
+      // Check if info already exists
+      final existingInfo = await FirebaseEventService.getParticipantRegistrationInfo(
+        event.id,
+        userId,
+      );
+      
+      // Show form to collect/update participant info
+      registrationInfo = await Navigator.push<ParticipantRegistrationInfo>(
+        context,
+        MaterialPageRoute(
+          builder: (context) => ParticipantRegistrationFormScreen(
+            event: event,
+            userId: userId,
+            existingInfo: existingInfo,
+          ),
+        ),
+      );
+      
+      if (registrationInfo == null) {
+        // User cancelled the form
+        return;
+      }
+      
+      // Save participant registration info
+      await FirebaseEventService.saveParticipantRegistrationInfo(registrationInfo);
     }
 
     final result = await FirebaseEventService.registerForEvent(event.id, userId);
@@ -837,10 +949,9 @@ class _ParticipantDashboardState extends State<ParticipantDashboard> {
                       color: _getCategoryColor(event.category),
                       onTap: () => _navigateToEventDetails(event),
                       onRegister: () => _registerForEvent(event),
-                      onFavorite: () => _toggleFavorite(event),
                       isRegistered: isRegistered,
                       imageUrl: event.imageUrl,
-                  registrationClosed: event.isRegistrationClosed,
+                      registrationClosed: event.isRegistrationClosed || event.isEventDatePassed,
                     ),
                   );
                 }),
@@ -960,7 +1071,6 @@ class _ParticipantDashboardState extends State<ParticipantDashboard> {
                     color: _getCategoryColor(event.category),
                     onTap: () => _navigateToEventDetails(event),
                     onRegister: null,
-                    onFavorite: () => _toggleFavorite(event),
                     isRegistered: isRegistered,
                     imageUrl: event.imageUrl,
                   ),
@@ -1023,10 +1133,9 @@ class _ParticipantDashboardState extends State<ParticipantDashboard> {
                     color: _getCategoryColor(event.category),
                     onTap: () => _navigateToEventDetails(event),
                     onRegister: () => _registerForEvent(event),
-                    onFavorite: () => _toggleFavorite(event),
                     isRegistered: isRegistered,
                     imageUrl: event.imageUrl,
-                    registrationClosed: event.isRegistrationClosed,
+                    registrationClosed: event.isRegistrationClosed || event.isEventDatePassed,
                   ),
                 );
               }),
@@ -1087,7 +1196,6 @@ class _ParticipantDashboardState extends State<ParticipantDashboard> {
                     color: _getCategoryColor(event.category),
                     onTap: () => _navigateToEventDetails(event),
                     onRegister: null,
-                    onFavorite: () => _toggleFavorite(event),
                     isRegistered: isRegistered,
                     imageUrl: event.imageUrl,
                     registrationClosed: event.isRegistrationClosed,
@@ -1248,10 +1356,9 @@ class _ParticipantDashboardState extends State<ParticipantDashboard> {
                             color: _getCategoryColor(event.category),
                             onTap: () => _navigateToEventDetails(event),
                             onRegister: _showPastOnly ? null : () => _registerForEvent(event),
-                            onFavorite: () => _toggleFavorite(event),
                             isRegistered: isRegistered,
                             imageUrl: event.imageUrl,
-                            registrationClosed: event.isRegistrationClosed,
+                            registrationClosed: event.isRegistrationClosed || event.isEventDatePassed,
                           ),
                         );
                       },
@@ -1617,10 +1724,6 @@ class _ParticipantDashboardState extends State<ParticipantDashboard> {
                     ],
                   ),
                 ),
-                IconButton(
-                  icon: const Icon(Icons.favorite_border),
-                  onPressed: () {},
-                ),
               ],
             ),
             const SizedBox(height: 8),
@@ -1815,15 +1918,6 @@ class _ParticipantDashboardState extends State<ParticipantDashboard> {
     ).then((_) => _refreshData());
   }
 
-  void _toggleFavorite(Event event) {
-    // TODO: Implement favorite functionality
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(
-        content: Text('Favorite functionality coming soon'),
-        backgroundColor: Colors.blue,
-      ),
-    );
-  }
 
   String _getStatusText(EventStatus status) {
     switch (status) {

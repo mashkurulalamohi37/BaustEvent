@@ -1,5 +1,6 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import '../models/event.dart';
+import '../models/participant_registration_info.dart';
 import 'firebase_notification_service.dart';
 
 enum RegistrationStatus {
@@ -30,17 +31,27 @@ class FirebaseEventService {
 
   // Queries
   static Future<List<Event>> getAllEvents() async {
-    final snap = await _eventsCol.orderBy('date', descending: false).get();
-    // Filter out deleted documents
-    return snap.docs
-        .where((d) => d.exists)
-        .map((d) => EventFirestore.fromFirestore(d))
-        .toList();
+    try {
+      // Fetch all events without orderBy to include events without createdAt field
+      final snap = await _eventsCol.get();
+      // Filter out deleted documents
+      final events = snap.docs
+          .where((d) => d.exists)
+          .map((d) => EventFirestore.fromFirestore(d))
+          .toList();
+      // Sort by createdAt descending (newest first)
+      // Events without createdAt will use event date as fallback from fromFirestore
+      events.sort((a, b) => b.createdAt.compareTo(a.createdAt));
+      return events;
+    } catch (e) {
+      print('Error fetching all events: $e');
+      return [];
+    }
   }
 
   static Stream<List<Event>> getAllEventsStream() {
+    // Fetch without orderBy to include events without createdAt field, then sort manually
     return _eventsCol
-        .orderBy('date', descending: false)
         .snapshots()
         .map((s) {
           // Log deletions from docChanges
@@ -72,6 +83,9 @@ class FirebaseEventService {
               print('Error parsing event document ${doc.id}: $e');
             }
           }
+          // Sort by createdAt descending (newest first) to ensure correct order
+          // Events without createdAt will use event date as fallback from fromFirestore
+          events.sort((a, b) => b.createdAt.compareTo(a.createdAt));
           print('getAllEventsStream: ${events.length} events (from ${s.docs.length} docs, ${s.docChanges.length} changes)');
           return events;
         })
@@ -83,37 +97,27 @@ class FirebaseEventService {
 
   static Future<List<Event>> getEventsByOrganizer(String organizerId) async {
     try {
-      // Try with orderBy first (requires index)
+      // Fetch all events without orderBy to include events without createdAt field
       final snap = await _eventsCol
           .where('organizerId', isEqualTo: organizerId)
-          .orderBy('date', descending: false)
           .get();
       // Filter out deleted documents
       final events = snap.docs
           .where((d) => d.exists)
           .map((d) => EventFirestore.fromFirestore(d))
           .toList();
-      // Sort manually as fallback
-      events.sort((a, b) => a.date.compareTo(b.date));
+      // Sort by createdAt descending (newest first)
+      // Events without createdAt will use DateTime.now() from fromFirestore, which is fine for sorting
+      events.sort((a, b) => b.createdAt.compareTo(a.createdAt));
       return events;
     } catch (e) {
-      // If index doesn't exist, fetch without orderBy and sort manually
-      print('Index not found, fetching without orderBy: $e');
-      final snap = await _eventsCol
-          .where('organizerId', isEqualTo: organizerId)
-          .get();
-      final events = snap.docs
-          .where((d) => d.exists)
-          .map((d) => EventFirestore.fromFirestore(d))
-          .toList();
-      // Sort manually
-      events.sort((a, b) => a.date.compareTo(b.date));
-      return events;
+      print('Error fetching organizer events: $e');
+      return [];
     }
   }
 
   static Stream<List<Event>> getEventsByOrganizerStream(String organizerId) {
-    // Use query without orderBy to avoid index requirement, then sort manually
+    // Fetch without orderBy to include events without createdAt field, then sort manually
     return _eventsCol
         .where('organizerId', isEqualTo: organizerId)
         .snapshots()
@@ -147,8 +151,9 @@ class FirebaseEventService {
               print('Error parsing event document ${doc.id}: $e');
             }
           }
-          // Sort manually since we're not using orderBy
-          events.sort((a, b) => a.date.compareTo(b.date));
+          // Sort by createdAt descending (newest first) to ensure correct order
+          // Events without createdAt will use DateTime.now() from fromFirestore, which is fine for sorting
+          events.sort((a, b) => b.createdAt.compareTo(a.createdAt));
           print('getEventsByOrganizerStream: ${events.length} events (from ${s.docs.length} docs, ${s.docChanges.length} changes)');
           return events;
         })
@@ -261,7 +266,13 @@ class FirebaseEventService {
       print('Event title: ${event.title}');
       print('Organizer ID: ${event.organizerId}');
       
-      final eventData = event.toFirestore();
+      // Create event with current timestamp for createdAt
+      final eventWithTimestamp = event.copyWith(
+        createdAt: DateTime.now(),
+        createdAtSet: true,
+      );
+      
+      final eventData = eventWithTimestamp.toFirestore();
       print('Event data to save: $eventData');
       
       print('Calling Firestore set()...');
@@ -275,7 +286,7 @@ class FirebaseEventService {
         
         // Send notification to all participants about the new event
         try {
-          await _notifyNewEvent(event);
+          await _notifyNewEvent(eventWithTimestamp);
         } catch (e) {
           print('Error sending new event notification: $e');
           // Don't fail event creation if notification fails
@@ -363,6 +374,11 @@ class FirebaseEventService {
           return RegistrationStatus.eventNotFound;
         }
         final event = EventFirestore.fromFirestore(snap);
+        // Check if event date has passed - participants cannot register for past events
+        if (event.isEventDatePassed) {
+          print('registerForEvent: Event $eventId date has passed (${event.date})');
+          return RegistrationStatus.registrationClosed;
+        }
         if (event.registrationCloseDate != null &&
             DateTime.now().isAfter(event.registrationCloseDate!)) {
           print('registerForEvent: Event $eventId registration closed at ${event.registrationCloseDate}');
@@ -383,6 +399,8 @@ class FirebaseEventService {
       
       // Send registration confirmation notification if successful
       if (status == RegistrationStatus.success) {
+        // Note: Participant registration info should be saved before calling this
+        // The UI will call saveParticipantRegistrationInfo separately
         try {
           final eventDoc = await _eventsCol.doc(eventId).get();
           if (eventDoc.exists) {
@@ -458,7 +476,7 @@ class FirebaseEventService {
   static Future<bool> unregisterFromEvent(String eventId, String userId) async {
     try {
       final ref = _eventsCol.doc(eventId);
-      return await _firestore.runTransaction((tx) async {
+      final success = await _firestore.runTransaction((tx) async {
         final snap = await tx.get(ref);
         if (!snap.exists) return false;
         final event = EventFirestore.fromFirestore(snap);
@@ -467,7 +485,298 @@ class FirebaseEventService {
         tx.update(ref, {'participants': updated});
         return true;
       });
+      
+      // Also delete participant registration info if exists
+      if (success) {
+        try {
+          final participantRef = _firestore
+              .collection('event_participants')
+              .where('eventId', isEqualTo: eventId)
+              .where('userId', isEqualTo: userId)
+              .limit(1);
+          final snapshot = await participantRef.get();
+          for (var doc in snapshot.docs) {
+            await doc.reference.delete();
+          }
+        } catch (e) {
+          print('Error deleting participant info: $e');
+          // Don't fail unregistration if info deletion fails
+        }
+      }
+      
+      return success;
     } catch (e) {
+      return false;
+    }
+  }
+
+  // Save participant registration info
+  static Future<bool> saveParticipantRegistrationInfo(
+    ParticipantRegistrationInfo info,
+  ) async {
+    try {
+      // Use a compound document ID: eventId_userId
+      final docId = '${info.eventId}_${info.userId}';
+      await _firestore
+          .collection('event_participants')
+          .doc(docId)
+          .set(info.toFirestore());
+      return true;
+    } catch (e) {
+      print('Error saving participant registration info: $e');
+      return false;
+    }
+  }
+
+  // Get participant registration info
+  static Future<ParticipantRegistrationInfo?> getParticipantRegistrationInfo(
+    String eventId,
+    String userId,
+  ) async {
+    try {
+      final docId = '${eventId}_${userId}';
+      final doc = await _firestore
+          .collection('event_participants')
+          .doc(docId)
+          .get();
+      if (doc.exists && doc.data() != null) {
+        return ParticipantRegistrationInfo.fromFirestore(doc.data()!);
+      }
+      return null;
+    } catch (e) {
+      print('Error getting participant registration info: $e');
+      return null;
+    }
+  }
+
+  // Get all participant registration info for an event
+  static Future<List<ParticipantRegistrationInfo>> getEventParticipantInfo(
+    String eventId,
+  ) async {
+    try {
+      final snapshot = await _firestore
+          .collection('event_participants')
+          .where('eventId', isEqualTo: eventId)
+          .get();
+      return snapshot.docs
+          .map((doc) => ParticipantRegistrationInfo.fromFirestore(doc.data()))
+          .toList();
+    } catch (e) {
+      print('Error getting event participant info: $e');
+      return [];
+    }
+  }
+
+  // Get participant registration info with pagination (for large events)
+  static Future<List<ParticipantRegistrationInfo>> getEventParticipantInfoPaginated(
+    String eventId, {
+    int limit = 500,
+    DocumentSnapshot? startAfter,
+  }) async {
+    try {
+      Query<Map<String, dynamic>> query = _firestore
+          .collection('event_participants')
+          .where('eventId', isEqualTo: eventId)
+          .limit(limit);
+      
+      if (startAfter != null) {
+        query = query.startAfterDocument(startAfter);
+      }
+      
+      final snapshot = await query.get();
+      return snapshot.docs
+          .map((doc) => ParticipantRegistrationInfo.fromFirestore(doc.data()))
+          .toList();
+    } catch (e) {
+      print('Error getting paginated event participant info: $e');
+      return [];
+    }
+  }
+
+  // Save pending registration (for hand cash payment)
+  static Future<bool> savePendingRegistration(
+    String eventId,
+    String userId,
+    ParticipantRegistrationInfo info,
+  ) async {
+    try {
+      final docId = '${eventId}_${userId}';
+      
+      // Ensure paymentMethod and paymentStatus are set correctly
+      final data = info.toFirestore();
+      
+      // Remove null values and ensure required fields are set
+      data.removeWhere((key, value) => value == null);
+      
+      // Force required fields
+      data['paymentMethod'] = 'handCash'; // Force to be handCash
+      data['paymentStatus'] = 'pending'; // Force to be pending
+      data['eventId'] = eventId; // Ensure eventId is set
+      data['userId'] = userId; // Ensure userId is set
+      data['registeredAt'] = info.registeredAt.toIso8601String(); // Ensure registeredAt is set
+      
+      print('=== SAVING PENDING REGISTRATION ===');
+      print('docId: $docId');
+      print('eventId: $eventId');
+      print('userId: $userId');
+      print('paymentMethod: ${data['paymentMethod']}');
+      print('paymentStatus: ${data['paymentStatus']}');
+      print('Full data: $data');
+      
+      try {
+        await _firestore
+            .collection('event_participants')
+            .doc(docId)
+            .set(data);
+        print('Document set() completed');
+      } catch (setError) {
+        print('❌ Error in set() operation: $setError');
+        rethrow;
+      }
+      
+      // Verify the document was saved
+      try {
+        final savedDoc = await _firestore
+            .collection('event_participants')
+            .doc(docId)
+            .get();
+        
+        if (savedDoc.exists && savedDoc.data() != null) {
+          print('✅ Pending registration verified in Firestore');
+          print('Saved document data: ${savedDoc.data()}');
+          
+          // Double-check the paymentMethod and paymentStatus
+          final savedData = savedDoc.data()!;
+          print('Verification - paymentMethod: ${savedData['paymentMethod']}, paymentStatus: ${savedData['paymentStatus']}');
+          
+          return true;
+        } else {
+          print('❌ Pending registration document not found after save');
+          print('Document exists: ${savedDoc.exists}, Data: ${savedDoc.data()}');
+          return false;
+        }
+      } catch (verifyError) {
+        print('❌ Error verifying saved document: $verifyError');
+        // Document might have been saved but verification failed, return true anyway
+        return true;
+      }
+    } catch (e, stackTrace) {
+      print('❌ Error saving pending registration: $e');
+      print('Error type: ${e.runtimeType}');
+      print('Stack trace: $stackTrace');
+      return false;
+    }
+  }
+
+  // Get pending registrations for an event (hand cash payments awaiting approval)
+  static Future<List<ParticipantRegistrationInfo>> getPendingRegistrations(
+    String eventId,
+  ) async {
+    try {
+      print('Getting pending registrations for eventId: $eventId');
+      // First, try with composite query
+      try {
+        final snapshot = await _firestore
+            .collection('event_participants')
+            .where('eventId', isEqualTo: eventId)
+            .where('paymentMethod', isEqualTo: 'handCash')
+            .where('paymentStatus', isEqualTo: 'pending')
+            .get();
+        
+        print('Found ${snapshot.docs.length} pending registrations (with composite query)');
+        return snapshot.docs
+            .map((doc) {
+              print('Pending registration doc: ${doc.id}, data: ${doc.data()}');
+              return ParticipantRegistrationInfo.fromFirestore(doc.data());
+            })
+            .toList();
+      } catch (e) {
+        // If composite query fails (no index), fetch all and filter manually
+        print('Composite query failed (may need index): $e');
+        print('Falling back to manual filtering...');
+        
+        final snapshot = await _firestore
+            .collection('event_participants')
+            .where('eventId', isEqualTo: eventId)
+            .get();
+        
+        print('Found ${snapshot.docs.length} total registrations for this event');
+        final pending = <ParticipantRegistrationInfo>[];
+        
+        for (var doc in snapshot.docs) {
+          final data = doc.data();
+          final paymentMethod = data['paymentMethod'] as String?;
+          final paymentStatus = data['paymentStatus'] as String?;
+          
+          print('Checking doc ${doc.id}: paymentMethod=$paymentMethod, paymentStatus=$paymentStatus');
+          
+          if (paymentMethod == 'handCash' && paymentStatus == 'pending') {
+            print('Found pending registration: ${doc.id}');
+            pending.add(ParticipantRegistrationInfo.fromFirestore(data));
+          }
+        }
+        
+        print('Found ${pending.length} pending registrations (manual filtering)');
+        return pending;
+      }
+    } catch (e) {
+      print('Error getting pending registrations: $e');
+      return [];
+    }
+  }
+
+  // Approve pending registration (hand cash payment)
+  static Future<bool> approvePendingRegistration(
+    String eventId,
+    String userId,
+  ) async {
+    try {
+      final docId = '${eventId}_${userId}';
+      final doc = await _firestore
+          .collection('event_participants')
+          .doc(docId)
+          .get();
+      
+      if (!doc.exists) return false;
+      
+      // Update payment status to approved
+      await _firestore
+          .collection('event_participants')
+          .doc(docId)
+          .update({'paymentStatus': 'approved'});
+      
+      // Add user to event participants list
+      final result = await registerForEvent(eventId, userId);
+      return result.isSuccess;
+    } catch (e) {
+      print('Error approving pending registration: $e');
+      return false;
+    }
+  }
+
+  // Reject pending registration (hand cash payment)
+  static Future<bool> rejectPendingRegistration(
+    String eventId,
+    String userId,
+  ) async {
+    try {
+      final docId = '${eventId}_${userId}';
+      final doc = await _firestore
+          .collection('event_participants')
+          .doc(docId)
+          .get();
+      
+      if (!doc.exists) return false;
+      
+      // Update payment status to rejected
+      await _firestore
+          .collection('event_participants')
+          .doc(docId)
+          .update({'paymentStatus': 'rejected'});
+      
+      return true;
+    } catch (e) {
+      print('Error rejecting pending registration: $e');
       return false;
     }
   }

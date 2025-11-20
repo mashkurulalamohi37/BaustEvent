@@ -37,6 +37,21 @@ class _EditEventScreenState extends State<EditEventScreen> {
   String? _currentImageUrl;
   DateTime? _registrationCloseDate;
   final TextEditingController _registrationCloseController = TextEditingController();
+  bool _paymentRequired = false;
+  final TextEditingController _paymentAmountController = TextEditingController();
+  final TextEditingController _bkashNumberController = TextEditingController();
+  final TextEditingController _nagadNumberController = TextEditingController();
+  bool _requireLevel = false;
+  bool _requireTerm = false;
+  bool _requireBatch = false;
+  bool _requireSection = false;
+  bool _requireTshirtSize = false;
+  bool _requireFood = false;
+  bool _requireHandCash = false;
+  bool _requireHall = false;
+  bool _requireGender = false;
+  bool _requirePersonalNumber = false;
+  bool _requireGuardianNumber = false;
 
   final List<String> _categories = [
     'Seminars',
@@ -75,6 +90,21 @@ class _EditEventScreenState extends State<EditEventScreen> {
     } else {
       _registrationCloseController.clear();
     }
+    _paymentRequired = event.paymentRequired;
+    _paymentAmountController.text = event.paymentAmount?.toString() ?? '';
+    _bkashNumberController.text = event.bkashNumber ?? '';
+    _nagadNumberController.text = event.nagadNumber ?? '';
+    _requireLevel = event.requireLevel;
+    _requireTerm = event.requireTerm;
+    _requireBatch = event.requireBatch;
+    _requireSection = event.requireSection;
+    _requireTshirtSize = event.requireTshirtSize;
+    _requireFood = event.requireFood;
+    _requireHandCash = event.requireHandCash;
+    _requireHall = event.requireHall;
+    _requireGender = event.requireGender;
+    _requirePersonalNumber = event.requirePersonalNumber;
+    _requireGuardianNumber = event.requireGuardianNumber;
   }
 
   Future<void> _pickImage() async {
@@ -130,6 +160,9 @@ class _EditEventScreenState extends State<EditEventScreen> {
     _timeController.dispose();
     _maxParticipantsController.dispose();
     _registrationCloseController.dispose();
+    _paymentAmountController.dispose();
+    _bkashNumberController.dispose();
+    _nagadNumberController.dispose();
     super.dispose();
   }
 
@@ -249,6 +282,29 @@ class _EditEventScreenState extends State<EditEventScreen> {
       return;
     }
 
+    // Validate payment fields if payment is required
+    if (_paymentRequired) {
+      if (_paymentAmountController.text.trim().isEmpty) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Please enter payment amount'),
+            backgroundColor: Colors.red,
+          ),
+        );
+        return;
+      }
+      final amount = double.tryParse(_paymentAmountController.text);
+      if (amount == null || amount <= 0) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Please enter a valid payment amount'),
+            backgroundColor: Colors.red,
+          ),
+        );
+        return;
+      }
+    }
+
     final effectiveTime = _selectedTime ?? _parseTimeOfDay(_timeController.text);
     if (effectiveTime == null) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -313,6 +369,27 @@ class _EditEventScreenState extends State<EditEventScreen> {
         imageUrl: imageUrl,
         registrationCloseDate: _registrationCloseDate,
         registrationCloseDateSet: true,
+        paymentRequired: _paymentRequired,
+        paymentAmount: _paymentRequired && _paymentAmountController.text.isNotEmpty
+            ? double.tryParse(_paymentAmountController.text)
+            : null,
+        bkashNumber: _paymentRequired && _bkashNumberController.text.isNotEmpty
+            ? _bkashNumberController.text.trim()
+            : null,
+        nagadNumber: _paymentRequired && _nagadNumberController.text.isNotEmpty
+            ? _nagadNumberController.text.trim()
+            : null,
+        requireLevel: _requireLevel,
+        requireTerm: _requireTerm,
+        requireBatch: _requireBatch,
+        requireSection: _requireSection,
+        requireTshirtSize: _requireTshirtSize,
+        requireFood: _requireFood,
+        requireHandCash: _requireHandCash,
+        requireHall: _requireHall,
+        requireGender: _requireGender,
+        requirePersonalNumber: _requirePersonalNumber,
+        requireGuardianNumber: _requireGuardianNumber,
       );
 
       final success = await FirebaseEventService.updateEvent(updatedEvent);
@@ -590,6 +667,209 @@ class _EditEventScreenState extends State<EditEventScreen> {
                   }
                   return null;
                 },
+              ),
+              const SizedBox(height: 24),
+              
+              // Payment Section
+              const Divider(),
+              const SizedBox(height: 16),
+              const Text(
+                'Payment Information (Optional)',
+                style: TextStyle(
+                  fontSize: 20,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+              const SizedBox(height: 16),
+              
+              // Payment Required Checkbox
+              CheckboxListTile(
+                title: const Text('Payment Required for Registration'),
+                subtitle: const Text('Enable this if participants need to pay to register'),
+                value: _paymentRequired,
+                onChanged: (value) {
+                  setState(() {
+                    _paymentRequired = value ?? false;
+                    if (!_paymentRequired) {
+                      _paymentAmountController.clear();
+                      _bkashNumberController.clear();
+                      _nagadNumberController.clear();
+                    }
+                  });
+                },
+                controlAffinity: ListTileControlAffinity.leading,
+              ),
+              
+              // Payment fields (shown when payment required is checked)
+              if (_paymentRequired) ...[
+                const SizedBox(height: 16),
+                CustomTextField(
+                  controller: _paymentAmountController,
+                  label: 'Payment Amount (TK)',
+                  icon: Icons.currency_exchange,
+                  keyboardType: TextInputType.number,
+                  validator: (value) {
+                    if (_paymentRequired) {
+                      if (value == null || value.trim().isEmpty) {
+                        return 'Please enter payment amount';
+                      }
+                      final amount = double.tryParse(value);
+                      if (amount == null || amount <= 0) {
+                        return 'Please enter a valid amount';
+                      }
+                    }
+                    return null;
+                  },
+                ),
+                const SizedBox(height: 16),
+                CustomTextField(
+                  controller: _bkashNumberController,
+                  label: 'bKash Number (Optional)',
+                  icon: Icons.phone,
+                  hint: 'e.g., 01712345678',
+                  keyboardType: TextInputType.phone,
+                ),
+                const SizedBox(height: 16),
+                CustomTextField(
+                  controller: _nagadNumberController,
+                  label: 'Nagad Number (Optional)',
+                  icon: Icons.phone,
+                  hint: 'e.g., 01712345678',
+                  keyboardType: TextInputType.phone,
+                ),
+                const SizedBox(height: 8),
+                Container(
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: Colors.blue.shade50,
+                    borderRadius: BorderRadius.circular(8),
+                    border: Border.all(color: Colors.blue.shade200),
+                  ),
+                  child: Row(
+                    children: [
+                      Icon(Icons.info_outline, color: Colors.blue.shade700, size: 20),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Text(
+                          'Participants will be redirected to bKash payment gateway during registration.',
+                          style: TextStyle(
+                            fontSize: 12,
+                            color: Colors.blue.shade900,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 16),
+                CheckboxListTile(
+                  title: const Text('Allow Hand Cash Payment'),
+                  subtitle: const Text('Participants can choose to pay by hand cash (requires organizer approval)'),
+                  value: _requireHandCash,
+                  onChanged: (value) => setState(() => _requireHandCash = value ?? false),
+                  controlAffinity: ListTileControlAffinity.leading,
+                ),
+              ],
+              const SizedBox(height: 32),
+              
+              // Participant Information Section
+              const Divider(),
+              const SizedBox(height: 16),
+              const Text(
+                'Participant Information (Optional)',
+                style: TextStyle(
+                  fontSize: 20,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+              const SizedBox(height: 8),
+              const Text(
+                'Enable fields that participants must fill during registration',
+                style: TextStyle(
+                  fontSize: 14,
+                  color: Colors.grey,
+                ),
+              ),
+              const SizedBox(height: 16),
+              
+              CheckboxListTile(
+                title: const Text('Require Level'),
+                subtitle: const Text('Participants must select their level'),
+                value: _requireLevel,
+                onChanged: (value) => setState(() => _requireLevel = value ?? false),
+                controlAffinity: ListTileControlAffinity.leading,
+              ),
+              
+              CheckboxListTile(
+                title: const Text('Require Term'),
+                subtitle: const Text('Participants must select their term'),
+                value: _requireTerm,
+                onChanged: (value) => setState(() => _requireTerm = value ?? false),
+                controlAffinity: ListTileControlAffinity.leading,
+              ),
+              
+              CheckboxListTile(
+                title: const Text('Require Batch'),
+                subtitle: const Text('Participants must enter their batch'),
+                value: _requireBatch,
+                onChanged: (value) => setState(() => _requireBatch = value ?? false),
+                controlAffinity: ListTileControlAffinity.leading,
+              ),
+              
+              CheckboxListTile(
+                title: const Text('Require Section'),
+                subtitle: const Text('Participants must select their section'),
+                value: _requireSection,
+                onChanged: (value) => setState(() => _requireSection = value ?? false),
+                controlAffinity: ListTileControlAffinity.leading,
+              ),
+              
+              CheckboxListTile(
+                title: const Text('Require T-shirt Size'),
+                subtitle: const Text('Participants must select their T-shirt size'),
+                value: _requireTshirtSize,
+                onChanged: (value) => setState(() => _requireTshirtSize = value ?? false),
+                controlAffinity: ListTileControlAffinity.leading,
+              ),
+              
+              CheckboxListTile(
+                title: const Text('Require Food Preference'),
+                subtitle: const Text('Participants must select Mutton or Beef'),
+                value: _requireFood,
+                onChanged: (value) => setState(() => _requireFood = value ?? false),
+                controlAffinity: ListTileControlAffinity.leading,
+              ),
+              
+              CheckboxListTile(
+                title: const Text('Require Hall'),
+                subtitle: const Text('Participants must select their hall'),
+                value: _requireHall,
+                onChanged: (value) => setState(() => _requireHall = value ?? false),
+                controlAffinity: ListTileControlAffinity.leading,
+              ),
+              
+              CheckboxListTile(
+                title: const Text('Require Gender'),
+                subtitle: const Text('Participants must select their gender'),
+                value: _requireGender,
+                onChanged: (value) => setState(() => _requireGender = value ?? false),
+                controlAffinity: ListTileControlAffinity.leading,
+              ),
+              
+              CheckboxListTile(
+                title: const Text('Require Personal Number'),
+                subtitle: const Text('Participants must provide their personal contact number'),
+                value: _requirePersonalNumber,
+                onChanged: (value) => setState(() => _requirePersonalNumber = value ?? false),
+                controlAffinity: ListTileControlAffinity.leading,
+              ),
+              
+              CheckboxListTile(
+                title: const Text('Require Guardian Number'),
+                subtitle: const Text('Participants must provide their guardian contact number'),
+                value: _requireGuardianNumber,
+                onChanged: (value) => setState(() => _requireGuardianNumber = value ?? false),
+                controlAffinity: ListTileControlAffinity.leading,
               ),
               const SizedBox(height: 32),
               

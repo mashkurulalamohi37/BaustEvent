@@ -336,6 +336,42 @@ class FirebaseUserService {
     }).toList();
   }
 
+  // Get users by IDs in batches (Firestore limit is 10 per whereIn query)
+  static Future<List<User>> getUsersByIds(List<String> userIds) async {
+    if (userIds.isEmpty) return [];
+    
+    final List<User> users = [];
+    const batchSize = 10; // Firestore whereIn limit
+    
+    // Process in batches
+    for (int i = 0; i < userIds.length; i += batchSize) {
+      final batch = userIds.skip(i).take(batchSize).toList();
+      
+      try {
+        // Use whereIn for batches of 10
+        final snap = await _usersCol.where(FieldPath.documentId, whereIn: batch).get();
+        for (var doc in snap.docs) {
+          final data = doc.data();
+          users.add(User(
+            id: doc.id,
+            email: (data['email'] as String?) ?? '',
+            name: (data['name'] as String?) ?? '',
+            universityId: (data['universityId'] as String?) ?? '',
+            type: _parseUserTypeAny(data['type'] ?? 'participant'),
+            profileImageUrl: data['profileImageUrl'] as String?,
+            createdAt: _parseDateAny(data['createdAt']) ?? DateTime.now(),
+            lastLoginAt: _parseDateAny(data['lastLoginAt']),
+          ));
+        }
+      } catch (e) {
+        print('Error loading user batch: $e');
+        // Continue with next batch even if one fails
+      }
+    }
+    
+    return users;
+  }
+
   // Create user profile in Firestore
   static Future<bool> createUser(User user) async {
     try {
