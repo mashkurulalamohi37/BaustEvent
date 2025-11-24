@@ -66,6 +66,40 @@ class ParticipantRegistrationInfo {
     };
   }
 
+  ParticipantRegistrationInfo copyWith({
+    String? level,
+    String? term,
+    String? batch,
+    String? section,
+    String? tshirtSize,
+    String? foodPreference,
+    String? hall,
+    String? gender,
+    String? personalNumber,
+    String? guardianNumber,
+    String? paymentMethod,
+    String? paymentStatus,
+    DateTime? registeredAt,
+  }) {
+    return ParticipantRegistrationInfo(
+      eventId: eventId,
+      userId: userId,
+      level: level ?? this.level,
+      term: term ?? this.term,
+      batch: batch ?? this.batch,
+      section: section ?? this.section,
+      tshirtSize: tshirtSize ?? this.tshirtSize,
+      foodPreference: foodPreference ?? this.foodPreference,
+      hall: hall ?? this.hall,
+      gender: gender ?? this.gender,
+      personalNumber: personalNumber ?? this.personalNumber,
+      guardianNumber: guardianNumber ?? this.guardianNumber,
+      paymentMethod: paymentMethod ?? this.paymentMethod,
+      paymentStatus: paymentStatus ?? this.paymentStatus,
+      registeredAt: registeredAt ?? this.registeredAt,
+    );
+  }
+
   static ParticipantRegistrationInfo fromFirestore(Map<String, dynamic> data) {
     return ParticipantRegistrationInfo(
       eventId: data['eventId'] ?? '',

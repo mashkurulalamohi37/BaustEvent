@@ -450,18 +450,9 @@ class _EventDetailsScreenState extends State<EventDetailsScreen> {
           
           // Update registration info with payment method
           if (registrationInfo != null) {
-            registrationInfo = ParticipantRegistrationInfo(
-              eventId: registrationInfo!.eventId,
-              userId: registrationInfo!.userId,
-              level: registrationInfo!.level,
-              term: registrationInfo!.term,
-              batch: registrationInfo!.batch,
-              section: registrationInfo!.section,
-              tshirtSize: registrationInfo!.tshirtSize,
-              foodPreference: registrationInfo!.foodPreference,
+            registrationInfo = registrationInfo!.copyWith(
               paymentMethod: selectedPaymentMethod,
               paymentStatus: selectedPaymentMethod == 'handCash' ? 'pending' : 'completed',
-              registeredAt: registrationInfo!.registeredAt,
             );
           } else if (_event.paymentRequired) {
             // Create registration info if payment is required but no other fields are required
@@ -497,16 +488,14 @@ class _EventDetailsScreenState extends State<EventDetailsScreen> {
           } else if (selectedPaymentMethod == 'handCash') {
             // For hand cash, registration is pending approval
             // Ensure registrationInfo exists
-            if (registrationInfo == null) {
-              // Create registration info if it doesn't exist
-              registrationInfo = ParticipantRegistrationInfo(
-                eventId: _event.id,
-                userId: userId,
-                paymentMethod: 'handCash',
-                paymentStatus: 'pending',
-                registeredAt: DateTime.now(),
-              );
-            }
+            registrationInfo = (registrationInfo ?? ParticipantRegistrationInfo(
+              eventId: _event.id,
+              userId: userId,
+              registeredAt: DateTime.now(),
+            )).copyWith(
+              paymentMethod: 'handCash',
+              paymentStatus: 'pending',
+            );
             
             // Save pending registration (not added to participants list yet)
             print('Saving hand cash pending registration for userId: $userId, eventId: ${_event.id}');

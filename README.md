@@ -69,13 +69,31 @@ Before running this project, make sure you have:
    - Download `google-services.json` for Android and place it in `android/app/`
    - Download `GoogleService-Info.plist` for iOS and place it in `ios/Runner/`
 
-4. **Configure Firebase**
+4. **iOS Setup** (Required for iOS builds)
+   ```bash
+   cd ios
+   pod install
+   cd ..
+   ```
+   
+   **Important iOS Configuration:**
+   - Ensure `GoogleService-Info.plist` is added to `ios/Runner/` directory
+   - The app requires iOS 13.0 or higher
+   - Make sure you have Xcode installed (for iOS development)
+   - Open `ios/Runner.xcworkspace` in Xcode to configure signing certificates
+
+5. **Configure Firebase**
    - Update Firebase configuration in your project
    - Set up authentication providers (Email/Password, Google, etc.)
+   - For iOS push notifications, enable Push Notifications capability in Xcode
 
-5. **Run the app**
+6. **Run the app**
    ```bash
+   # For Android
    flutter run
+   
+   # For iOS (requires Mac and Xcode)
+   flutter run -d ios
    ```
 
 ## 📁 Project Structure

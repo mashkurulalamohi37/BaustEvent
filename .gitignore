@@ -48,3 +48,8 @@ app.*.map.json
 **/*.jks
 **/*.keystore
 android/key.properties
+
+# Firebase configuration files (contain sensitive data)
+**/google-services.json
+**/GoogleService-Info.plist
+android/.kotlin/

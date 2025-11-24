@@ -2,6 +2,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'event_details_screen.dart';
 import 'welcome_screen.dart';
 import '../models/event.dart';
@@ -54,8 +55,12 @@ class _ParticipantDashboardState extends State<ParticipantDashboard> {
   StreamSubscription<List<Event>>? _eventsSubscription;
   StreamSubscription<List<Event>>? _myEventsSubscription;
   StreamSubscription<QuerySnapshot>? _notificationSubscription;
-  Set<String> _shownNotificationIds = {}; // Track which notifications we've already shown
-  DateTime? _notificationListenerStartTime; // Track when listener was initialized
+  final Set<String> _shownNotificationIds = {}; // Track which notifications we've already shown
+  bool _notificationInitialLoadComplete = false;
+  SharedPreferences? _notificationPrefs;
+  DateTime? _lastNotificationSeenAt;
+  String? _activeNotificationUserId;
+  static const String _notificationPrefsKeyPrefix = 'participant_last_notification_seen_';
 
   @override
   void dispose() {
@@ -100,14 +105,8 @@ class _ParticipantDashboardState extends State<ParticipantDashboard> {
       }
       
       // Determine user ID for events - prioritize widget.userId since it's from auth
-      String userId;
-      if (widget.userId != null) {
-        userId = widget.userId!;
-      } else if (user != null) {
-        userId = user.id;
-      } else {
-        userId = 'guest_participant';
-      }
+      final userId = _resolveUserId(user);
+      await _ensureNotificationPrefsLoaded(userId);
       
       print('Setting up streams for userId: $userId');
       
@@ -179,34 +178,53 @@ class _ParticipantDashboardState extends State<ParticipantDashboard> {
       });
       
       // Set up listener for new event notifications
-      _setupNotificationListener();
+      _setupNotificationListener(userId);
     } catch (e) {
       setState(() => _isLoading = false);
     }
   }
+
+  String _resolveUserId(User? user) {
+    if (widget.userId != null) {
+      return widget.userId!;
+    }
+    if (user != null) {
+      return user.id;
+    }
+    return 'guest_participant';
+  }
+
+  Future<void> _ensureNotificationPrefsLoaded(String userId) async {
+    _notificationPrefs ??= await SharedPreferences.getInstance();
+    _activeNotificationUserId = userId;
+    final stored = _notificationPrefs!.getString('$_notificationPrefsKeyPrefix$userId');
+    if (stored != null) {
+      _lastNotificationSeenAt = DateTime.tryParse(stored);
+    }
+  }
+
+  Future<void> _updateLastNotificationSeen(DateTime? createdAt) async {
+    final userId = _activeNotificationUserId;
+    if (userId == null) return;
+    final timestamp = createdAt ?? DateTime.now();
+    if (_lastNotificationSeenAt == null || timestamp.isAfter(_lastNotificationSeenAt!)) {
+      _lastNotificationSeenAt = timestamp;
+      _notificationPrefs ??= await SharedPreferences.getInstance();
+      await _notificationPrefs!.setString(
+        '$_notificationPrefsKeyPrefix$userId',
+        _lastNotificationSeenAt!.toIso8601String(),
+      );
+    }
+  }
   
   // Set up listener for notifications from Firestore
-  void _setupNotificationListener() {
+  void _setupNotificationListener(String userId) {
     try {
       print('Setting up notification listener for participant...');
       final notificationsCol = FirebaseFirestore.instance.collection('notifications');
       _notificationSubscription?.cancel();
+      _notificationInitialLoadComplete = false;
       
-      // Mark listener start time - only show notifications created AFTER this time
-      _notificationListenerStartTime = DateTime.now();
-      
-      // First, mark all existing notifications as shown (so they don't trigger on initial load)
-      notificationsCol
-          .where('read', isEqualTo: false)
-          .get()
-          .then((snapshot) {
-        for (var doc in snapshot.docs) {
-          _shownNotificationIds.add(doc.id);
-        }
-        print('Marked ${snapshot.docs.length} existing notifications as shown');
-      });
-      
-      // Listen to all unread notifications (not just new_event)
       _notificationSubscription = notificationsCol
           .where('read', isEqualTo: false)
           .orderBy('createdAt', descending: true)
@@ -214,30 +232,47 @@ class _ParticipantDashboardState extends State<ParticipantDashboard> {
           .listen((snapshot) {
         print('Notification listener triggered: ${snapshot.docs.length} unread notifications');
         
-        if (snapshot.docs.isNotEmpty && mounted) {
-          // Process each new unread notification
+        if (!_notificationInitialLoadComplete) {
           for (var doc in snapshot.docs) {
-            final notificationId = doc.id;
-            
-            // Skip if we've already shown this notification
-            if (_shownNotificationIds.contains(notificationId)) {
-              print('Skipping already shown notification: $notificationId');
-              continue;
-            }
-            
+            _shownNotificationIds.add(doc.id);
+          }
+          _notificationInitialLoadComplete = true;
+          print('Notification listener bootstrap complete - existing notifications skipped');
+          return;
+        }
+        
+        if (!mounted) {
+          print('Widget not mounted, skipping notification processing');
+          return;
+        }
+        
+        final newNotifications = snapshot.docChanges
+            .where((change) => change.type == DocumentChangeType.added)
+            .map((change) => change.doc)
+            .where((doc) => !_shownNotificationIds.contains(doc.id))
+            .toList();
+        
+        if (newNotifications.isEmpty) {
+          print('No new notification changes detected');
+          return;
+        }
+        
+        for (var doc in newNotifications) {
+          final notificationId = doc.id;
             final data = doc.data();
+          if (data == null) {
+            print('Notification $notificationId has no data, skipping');
+            continue;
+          }
             
-            // Only show notifications created AFTER the listener was initialized
-            if (_notificationListenerStartTime != null) {
               final createdAtStr = data['createdAt'] as String?;
-              if (createdAtStr != null) {
-                final createdAt = DateTime.tryParse(createdAtStr);
-                if (createdAt != null && createdAt.isBefore(_notificationListenerStartTime!)) {
-                  print('Skipping old notification created before listener initialization: $notificationId');
+          final createdAt = createdAtStr != null ? DateTime.tryParse(createdAtStr) : null;
+          if (_lastNotificationSeenAt != null &&
+              createdAt != null &&
+              !createdAt.isAfter(_lastNotificationSeenAt!)) {
+            print('Notification $notificationId is older than last seen, skipping');
                   _shownNotificationIds.add(notificationId);
                   continue;
-                }
-              }
             }
             
             final type = data['type'] as String?;
@@ -247,7 +282,6 @@ class _ParticipantDashboardState extends State<ParticipantDashboard> {
             
             print('Processing notification: type=$type, eventTitle=$eventTitle, eventId=$eventId');
             
-            // Show system notification based on type
             String title;
             String body;
             
@@ -275,58 +309,36 @@ class _ParticipantDashboardState extends State<ParticipantDashboard> {
             
             print('Showing system notification: $title - $body');
             
-            // Show system notification in phone notification panel
             FirebaseNotificationService.showLocalNotification(
               title: title,
               body: body,
               payload: 'event:$eventId',
             );
             
-            // Mark this notification as shown (don't mark as read - let user do that in notifications screen)
             _shownNotificationIds.add(notificationId);
             print('Notification marked as shown: $notificationId');
+          _updateLastNotificationSeen(createdAt);
             
-            // Refresh events list
-            if (mounted) {
               _refreshData();
-            }
-          }
-        } else {
-          print('No unread notifications found');
         }
       }, onError: (error) {
         print('Error in notification listener: $error');
-        // Fallback to query without orderBy
-        _setupNotificationListenerFallback();
+        _setupNotificationListenerFallback(userId);
       });
       print('Notification listener set up successfully');
     } catch (e, stackTrace) {
       print('Error setting up notification listener: $e');
       print('Stack trace: $stackTrace');
-      // Fallback to query without orderBy
-      _setupNotificationListenerFallback();
+      _setupNotificationListenerFallback(userId);
     }
   }
   
-  void _setupNotificationListenerFallback() {
+  void _setupNotificationListenerFallback(String userId) {
     try {
       print('Setting up fallback notification listener (without orderBy)...');
       final notificationsCol = FirebaseFirestore.instance.collection('notifications');
       _notificationSubscription?.cancel();
-      
-      // Mark listener start time
-      _notificationListenerStartTime ??= DateTime.now();
-      
-      // Mark all existing notifications as shown
-      notificationsCol
-          .where('read', isEqualTo: false)
-          .get()
-          .then((snapshot) {
-        for (var doc in snapshot.docs) {
-          _shownNotificationIds.add(doc.id);
-        }
-        print('Marked ${snapshot.docs.length} existing notifications as shown (fallback)');
-      });
+      _notificationInitialLoadComplete = false;
       
       _notificationSubscription = notificationsCol
           .where('read', isEqualTo: false)
@@ -334,28 +346,46 @@ class _ParticipantDashboardState extends State<ParticipantDashboard> {
           .listen((snapshot) {
         print('Fallback notification listener triggered: ${snapshot.docs.length} unread notifications');
         
-        if (snapshot.docs.isNotEmpty && mounted) {
-          // Process all unread notifications
+        if (!_notificationInitialLoadComplete) {
           for (var doc in snapshot.docs) {
-            final notificationId = doc.id;
-            
-            // Skip if we've already shown this notification
-            if (_shownNotificationIds.contains(notificationId)) {
-              continue;
-            }
-            
+            _shownNotificationIds.add(doc.id);
+          }
+          _notificationInitialLoadComplete = true;
+          print('Fallback listener bootstrap complete - existing notifications skipped');
+          return;
+        }
+        
+        if (!mounted) {
+          print('Widget not mounted, skipping fallback notification processing');
+          return;
+        }
+        
+        final newNotifications = snapshot.docChanges
+            .where((change) => change.type == DocumentChangeType.added)
+            .map((change) => change.doc)
+            .where((doc) => !_shownNotificationIds.contains(doc.id))
+            .toList();
+        
+        if (newNotifications.isEmpty) {
+          print('No new fallback notification changes detected');
+          return;
+        }
+        
+        for (var doc in newNotifications) {
+          final notificationId = doc.id;
             final data = doc.data();
+          if (data == null) {
+            print('Fallback notification $notificationId has no data, skipping');
+            continue;
+          }
             
-            // Only show notifications created AFTER the listener was initialized
-            if (_notificationListenerStartTime != null) {
               final createdAtStr = data['createdAt'] as String?;
-              if (createdAtStr != null) {
-                final createdAt = DateTime.tryParse(createdAtStr);
-                if (createdAt != null && createdAt.isBefore(_notificationListenerStartTime!)) {
+          final createdAt = createdAtStr != null ? DateTime.tryParse(createdAtStr) : null;
+          if (_lastNotificationSeenAt != null &&
+              createdAt != null &&
+              !createdAt.isAfter(_lastNotificationSeenAt!)) {
                   _shownNotificationIds.add(notificationId);
                   continue;
-                }
-              }
             }
             
             final type = data['type'] as String?;
@@ -363,7 +393,6 @@ class _ParticipantDashboardState extends State<ParticipantDashboard> {
             final eventId = data['eventId'] as String? ?? '';
             final category = data['category'] as String? ?? '';
             
-            // Show system notification based on type
             String title;
             String body;
             
@@ -391,21 +420,15 @@ class _ParticipantDashboardState extends State<ParticipantDashboard> {
             
             print('Showing system notification (fallback): $title - $body');
             
-            // Show system notification in phone notification panel
             FirebaseNotificationService.showLocalNotification(
               title: title,
               body: body,
               payload: 'event:$eventId',
             );
             
-            // Mark this notification as shown
             _shownNotificationIds.add(notificationId);
-            
-            // Refresh events list
-            if (mounted) {
+          _updateLastNotificationSeen(createdAt);
               _refreshData();
-            }
-          }
         }
       }, onError: (error) {
         print('Error in notification listener (fallback): $error');

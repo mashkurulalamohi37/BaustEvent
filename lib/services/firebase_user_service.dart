@@ -291,6 +291,28 @@ class FirebaseUserService {
     await _auth.signOut();
   }
 
+  // Send password reset email
+  static Future<void> sendPasswordResetEmail(String email) async {
+    try {
+      await _auth.sendPasswordResetEmail(
+        email: email.trim().toLowerCase(),
+      );
+    } on FirebaseAuthException catch (e) {
+      print('Password reset error: ${e.code} - ${e.message}');
+      // Re-throw with user-friendly message
+      if (e.code == 'user-not-found') {
+        throw Exception('No account found with this email address.');
+      } else if (e.code == 'invalid-email') {
+        throw Exception('Invalid email address.');
+      } else {
+        throw Exception('Failed to send password reset email: ${e.message}');
+      }
+    } catch (e) {
+      print('Error sending password reset email: $e');
+      throw Exception('Error sending password reset email. Please try again.');
+    }
+  }
+
   // Delete user from Firebase Authentication
   // Note: This only works for the currently authenticated user
   // To delete other users, you need Firebase Admin SDK (backend/Cloud Function)

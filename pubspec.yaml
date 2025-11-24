@@ -53,6 +53,9 @@ dependencies:
   
   # Payment gateway
   flutter_bkash: ^0.3.1
+  
+  # Local storage
+  shared_preferences: ^2.2.2
 
 dev_dependencies:
   flutter_test:

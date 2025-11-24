@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'participant_dashboard.dart';
 import 'organizer_dashboard.dart';
 import 'admin_dashboard.dart';
+import 'forgot_password_screen.dart';
 import '../models/user.dart';
 import '../services/firebase_user_service.dart';
 
@@ -193,7 +194,29 @@ class _AuthScreenState extends State<AuthScreen> {
                   return null;
                 },
               ),
-              const SizedBox(height: 32),
+              const SizedBox(height: 24),
+              if (isLogin) ...[
+                Align(
+                  alignment: Alignment.centerRight,
+                  child: TextButton(
+                    onPressed: _showForgotPasswordDialog,
+                    style: TextButton.styleFrom(
+                      padding: const EdgeInsets.symmetric(horizontal: 0, vertical: 4),
+                      minimumSize: Size.zero,
+                      tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                    ),
+                    child: const Text(
+                      'Forgot Password?',
+                      style: TextStyle(
+                        color: Color(0xFF1976D2),
+                        fontWeight: FontWeight.w600,
+                        fontSize: 14,
+                      ),
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 8),
+              ],
               SizedBox(
                 height: 56,
                 child: ElevatedButton(
@@ -222,7 +245,10 @@ class _AuthScreenState extends State<AuthScreen> {
                 children: [
                   Text(
                     isLogin ? 'Don\'t have an account? ' : 'Already have an account? ',
-                    style: const TextStyle(color: Colors.grey),
+                    style: const TextStyle(
+                      color: Colors.grey,
+                      fontSize: 15,
+                    ),
                   ),
                   TextButton(
                     onPressed: () {
@@ -230,11 +256,17 @@ class _AuthScreenState extends State<AuthScreen> {
                         isLogin = !isLogin;
                       });
                     },
+                    style: TextButton.styleFrom(
+                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
+                      minimumSize: Size.zero,
+                      tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                    ),
                     child: Text(
                       isLogin ? 'Sign Up' : 'Sign In',
                       style: const TextStyle(
                         color: Color(0xFF1976D2),
                         fontWeight: FontWeight.w600,
+                        fontSize: 15,
                       ),
                     ),
                   ),
@@ -429,6 +461,15 @@ class _AuthScreenState extends State<AuthScreen> {
     if (mounted) {
       setState(() => _isLoading = false);
     }
+  }
+
+  void _showForgotPasswordDialog() {
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (context) => const ForgotPasswordScreen(),
+      ),
+    );
   }
 
 }
