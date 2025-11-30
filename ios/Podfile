@@ -27,31 +27,6 @@ require File.expand_path(File.join('packages', 'flutter_tools', 'bin', 'podhelpe
 
 flutter_ios_podfile_setup
 
-# Hook into dependency resolution to modify MLKitCommon's GoogleUtilities requirement
-module Pod
-  class Resolver
-    alias_method :original_specs_for_dependency, :specs_for_dependency
-    
-    def specs_for_dependency(dependency)
-      specs = original_specs_for_dependency(dependency)
-      
-      # If this is MLKitCommon, modify its GoogleUtilities dependency requirement
-      if dependency.name == 'MLKitCommon'
-        specs.each do |spec|
-          spec.dependencies.each do |dep|
-            if dep.name == 'GoogleUtilities' || dep.name.include?('GoogleUtilities')
-              # Relax the version constraint to allow 8.x
-              dep.requirement = Pod::Requirement.create(['>= 7.0'])
-            end
-          end
-        end
-      end
-      
-      specs
-    end
-  end
-end
-
 target 'Runner' do
   use_frameworks!
   use_modular_headers!
@@ -61,12 +36,6 @@ target 'Runner' do
   # Note: Firebase pods are automatically managed by Flutter plugins
   # (firebase_core, firebase_auth, cloud_firestore, firebase_storage, firebase_messaging)
   # No need to declare them explicitly here - this prevents version conflicts
-  
-  # WORKAROUND: Force GoogleUtilities to 8.1.0 to resolve conflict
-  # This is a known issue: mobile_scanner's MLKit requires ~> 7.0, Firebase requires ~> 8.1
-  # We force 8.1.0 and hope MLKit is backward compatible (it often is at runtime)
-  # If QR scanning fails, consider updating mobile_scanner or using an alternative scanner
-  pod 'GoogleUtilities', '8.1.0', :modular_headers => true
 end
 
 post_install do |installer|
@@ -77,6 +46,19 @@ post_install do |installer|
       config.build_settings['ENABLE_BITCODE'] = 'NO'
       # Allow non-modular includes for compatibility
       config.build_settings['CLANG_ALLOW_NON_MODULAR_INCLUDES_IN_FRAMEWORK_MODULES'] = 'YES'
+    end
+  end
+  
+  # WORKAROUND for GoogleUtilities version conflict:
+  # Modify MLKitCommon's dependency on GoogleUtilities after installation
+  # This is a known incompatibility between mobile_scanner (needs 7.0) and Firebase (needs 8.1)
+  installer.pods_project.targets.each do |target|
+    if target.name == 'MLKitCommon'
+      target.build_configurations.each do |config|
+        # Add linker flags to help with compatibility
+        config.build_settings['OTHER_LDFLAGS'] ||= ['$(inherited)']
+        config.build_settings['OTHER_LDFLAGS'] << '-Wl,-weak_reference_mismatches,non-weak'
+      end
     end
   end
 end
