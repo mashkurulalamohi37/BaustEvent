@@ -44,21 +44,6 @@ post_install do |installer|
     target.build_configurations.each do |config|
       config.build_settings['IPHONEOS_DEPLOYMENT_TARGET'] = '13.0'
       config.build_settings['ENABLE_BITCODE'] = 'NO'
-      # Allow non-modular includes for compatibility
-      config.build_settings['CLANG_ALLOW_NON_MODULAR_INCLUDES_IN_FRAMEWORK_MODULES'] = 'YES'
-    end
-  end
-  
-  # WORKAROUND for GoogleUtilities version conflict:
-  # Modify MLKitCommon's dependency on GoogleUtilities after installation
-  # This is a known incompatibility between mobile_scanner (needs 7.0) and Firebase (needs 8.1)
-  installer.pods_project.targets.each do |target|
-    if target.name == 'MLKitCommon'
-      target.build_configurations.each do |config|
-        # Add linker flags to help with compatibility
-        config.build_settings['OTHER_LDFLAGS'] ||= ['$(inherited)']
-        config.build_settings['OTHER_LDFLAGS'] << '-Wl,-weak_reference_mismatches,non-weak'
-      end
     end
   end
 end
