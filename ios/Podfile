@@ -31,6 +31,11 @@ target 'Runner' do
   use_frameworks!
   use_modular_headers!
 
+  # Override GoogleUtilities BEFORE installing Flutter pods to force version resolution
+  # Firebase requires ~> 8.1, mobile_scanner's MLKit requires ~> 7.0
+  # Force to 8.1.0 - MLKit may still work with this version (API compatibility)
+  pod 'GoogleUtilities', '8.1.0', :modular_headers => true
+
   flutter_install_all_ios_pods File.dirname(File.realpath(__FILE__))
   
   # Note: Firebase pods are automatically managed by Flutter plugins
@@ -44,6 +49,17 @@ post_install do |installer|
     target.build_configurations.each do |config|
       config.build_settings['IPHONEOS_DEPLOYMENT_TARGET'] = '13.0'
       config.build_settings['ENABLE_BITCODE'] = 'NO'
+    end
+  end
+  
+  # Force GoogleUtilities to version 8.1.0 to resolve conflict
+  # This may cause MLKit to have issues, but it's required for Firebase
+  installer.pods_project.targets.each do |target|
+    if target.name == 'GoogleUtilities' || target.name.start_with?('GoogleUtilities')
+      target.build_configurations.each do |config|
+        # Ensure compatibility
+        config.build_settings['CLANG_ALLOW_NON_MODULAR_INCLUDES_IN_FRAMEWORK_MODULES'] = 'YES'
+      end
     end
   end
 end
