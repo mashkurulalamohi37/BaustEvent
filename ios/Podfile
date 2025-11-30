@@ -33,12 +33,9 @@ target 'Runner' do
 
   flutter_install_all_ios_pods File.dirname(File.realpath(__FILE__))
   
-  # Firebase pods
-  pod 'Firebase/Core'
-  pod 'Firebase/Auth'
-  pod 'Firebase/Firestore'
-  pod 'Firebase/Storage'
-  pod 'Firebase/Messaging'
+  # Note: Firebase pods are automatically managed by Flutter plugins
+  # (firebase_core, firebase_auth, cloud_firestore, firebase_storage, firebase_messaging)
+  # No need to declare them explicitly here - this prevents version conflicts
 end
 
 post_install do |installer|
