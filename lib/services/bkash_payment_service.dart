@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter_bkash/flutter_bkash.dart';
 
 class BKashPaymentService {
@@ -32,6 +33,16 @@ class BKashPaymentService {
     required String customerName,
     required String customerPhone,
   }) async {
+    // Check if bKash payment is supported on this platform
+    if (kIsWeb || defaultTargetPlatform == TargetPlatform.macOS || 
+        defaultTargetPlatform == TargetPlatform.linux || 
+        defaultTargetPlatform == TargetPlatform.windows) {
+      return {
+        'success': false,
+        'message': 'bKash payment is currently only available on mobile devices (Android/iOS).',
+      };
+    }
+    
     try {
       final flutterBkash = _getBkashInstance();
 

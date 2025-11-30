@@ -13,19 +13,13 @@ import UserNotifications
     // Initialize Firebase
     FirebaseApp.configure()
     
-    // Register for remote notifications
-    if #available(iOS 10.0, *) {
-      UNUserNotificationCenter.current().delegate = self
-      let authOptions: UNAuthorizationOptions = [.alert, .badge, .sound]
-      UNUserNotificationCenter.current().requestAuthorization(
-        options: authOptions,
-        completionHandler: { _, _ in }
-      )
-    } else {
-      let settings: UIUserNotificationSettings =
-        UIUserNotificationSettings(types: [.alert, .badge, .sound], categories: nil)
-      application.registerUserNotificationSettings(settings)
-    }
+    // Register for remote notifications (iOS 13.0+)
+    UNUserNotificationCenter.current().delegate = self
+    let authOptions: UNAuthorizationOptions = [.alert, .badge, .sound]
+    UNUserNotificationCenter.current().requestAuthorization(
+      options: authOptions,
+      completionHandler: { _, _ in }
+    )
     
     application.registerForRemoteNotifications()
     
@@ -58,9 +52,11 @@ extension AppDelegate {
     print("Notification received in foreground: \(userInfo)")
     
     // Show notification even when app is in foreground
+    // iOS 13.0+ supports banner style
     if #available(iOS 14.0, *) {
       completionHandler([.banner, .sound, .badge])
     } else {
+      // iOS 13.0 uses alert style
       completionHandler([.alert, .sound, .badge])
     }
   }

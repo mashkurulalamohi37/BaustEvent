@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart';
 import 'package:mobile_scanner/mobile_scanner.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'dart:async';
@@ -358,6 +359,56 @@ class _ManageParticipantsScreenState extends State<ManageParticipantsScreen> {
 
   void _showQRScanner() {
     setState(() => _isScanning = true);
+    
+    // Check if mobile_scanner is supported on this platform
+    if (kIsWeb || defaultTargetPlatform == TargetPlatform.macOS) {
+      // For macOS and web, show a text input dialog as fallback
+      final controller = TextEditingController();
+      showDialog(
+        context: context,
+        builder: (context) => AlertDialog(
+          title: const Text('Enter QR Code Data'),
+          content: SizedBox(
+            width: 300,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const Icon(Icons.qr_code_scanner, size: 64, color: Colors.grey),
+                const SizedBox(height: 16),
+                TextField(
+                  controller: controller,
+                  decoration: const InputDecoration(
+                    labelText: 'QR Code Data',
+                    border: OutlineInputBorder(),
+                    hintText: 'Paste QR code data here',
+                  ),
+                ),
+              ],
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () {
+                Navigator.pop(context);
+                setState(() => _isScanning = false);
+              },
+              child: const Text('Cancel'),
+            ),
+            TextButton(
+              onPressed: () {
+                if (controller.text.isNotEmpty) {
+                  Navigator.pop(context);
+                  _processQRCode(controller.text);
+                }
+              },
+              child: const Text('Submit'),
+            ),
+          ],
+        ),
+      );
+      return;
+    }
+    
     _scannerController = MobileScannerController();
     
     showDialog(
