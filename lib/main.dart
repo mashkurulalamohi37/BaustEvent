@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:firebase_core/firebase_core.dart';
@@ -187,11 +188,18 @@ class AuthWrapper extends StatefulWidget {
 class _AuthWrapperState extends State<AuthWrapper> {
   bool _isLoading = true;
   User? _currentUser;
+  Timer? _timeoutTimer;
 
   @override
   void initState() {
     super.initState();
     _checkAuthState();
+  }
+
+  @override
+  void dispose() {
+    _timeoutTimer?.cancel();
+    super.dispose();
   }
 
   Future<void> _checkAuthState() async {
@@ -222,7 +230,8 @@ class _AuthWrapperState extends State<AuthWrapper> {
     }
     
     // Safety fallback - if still loading after 6 seconds, force proceed
-    Future.delayed(const Duration(seconds: 6), () {
+    _timeoutTimer?.cancel(); // Cancel any existing timer
+    _timeoutTimer = Timer(const Duration(seconds: 6), () {
       if (mounted && _isLoading) {
         print('Force proceeding after timeout');
         setState(() {
