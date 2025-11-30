@@ -19,6 +19,9 @@ import '../widgets/category_card.dart';
 import 'edit_profile_screen.dart';
 import 'notifications_screen.dart';
 import 'participant_registration_form_screen.dart';
+import 'settings_screen.dart';
+import 'help_support_screen.dart';
+import '../services/theme_service.dart';
 
 class ParticipantDashboard extends StatefulWidget {
   final String? userId;
@@ -1007,30 +1010,49 @@ class _ParticipantDashboardState extends State<ParticipantDashboard> {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             // Search Bar
-            Container(
-              decoration: BoxDecoration(
-                color: Colors.grey[100],
-                borderRadius: BorderRadius.circular(12),
-              ),
-              child: TextField(
-                controller: _searchController,
-                onChanged: _searchEvents,
-                decoration: InputDecoration(
-                  hintText: 'Search events...',
-                  prefixIcon: const Icon(Icons.search),
-                  suffixIcon: hasSearchQuery
-                      ? IconButton(
-                          icon: const Icon(Icons.clear),
-                          onPressed: () {
-                            _searchController.clear();
-                            _searchEvents('');
-                          },
-                        )
-                      : null,
-                  border: InputBorder.none,
-                  contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-                ),
-              ),
+            Builder(
+              builder: (context) {
+                final themeService = ThemeService.instance ?? ThemeService();
+                final isDark = themeService.isDarkMode;
+                return Container(
+                  decoration: BoxDecoration(
+                    color: isDark ? const Color(0xFF1E1E1E) : Colors.grey[100],
+                    borderRadius: BorderRadius.circular(12),
+                    border: isDark ? Border.all(color: Colors.grey[700]!, width: 1) : null,
+                  ),
+                  child: TextField(
+                    controller: _searchController,
+                    onChanged: _searchEvents,
+                    style: TextStyle(
+                      color: isDark ? Colors.white : Colors.black,
+                    ),
+                    decoration: InputDecoration(
+                      hintText: 'Search events...',
+                      hintStyle: TextStyle(
+                        color: isDark ? Colors.grey[400] : Colors.grey[600],
+                      ),
+                      prefixIcon: Icon(
+                        Icons.search,
+                        color: isDark ? Colors.grey[400] : Colors.grey[600],
+                      ),
+                      suffixIcon: hasSearchQuery
+                          ? IconButton(
+                              icon: Icon(
+                                Icons.clear,
+                                color: isDark ? Colors.grey[400] : Colors.grey[600],
+                              ),
+                              onPressed: () {
+                                _searchController.clear();
+                                _searchEvents('');
+                              },
+                            )
+                          : null,
+                      border: InputBorder.none,
+                      contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                    ),
+                  ),
+                );
+              },
             ),
             const SizedBox(height: 16),
             
@@ -1466,21 +1488,37 @@ class _ParticipantDashboardState extends State<ParticipantDashboard> {
         padding: const EdgeInsets.all(16.0),
         child: Column(
           children: [
-            Container(
-              decoration: BoxDecoration(
-                color: Colors.grey[100],
-                borderRadius: BorderRadius.circular(12),
-              ),
-              child: TextField(
-                controller: _searchController,
-                onChanged: _searchEvents,
-                decoration: const InputDecoration(
-                  hintText: 'Search events by name, category, or keyword...',
-                  prefixIcon: Icon(Icons.search),
-                  border: InputBorder.none,
-                  contentPadding: EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-                ),
-              ),
+            Builder(
+              builder: (context) {
+                final themeService = ThemeService.instance ?? ThemeService();
+                final isDark = themeService.isDarkMode;
+                return Container(
+                  decoration: BoxDecoration(
+                    color: isDark ? const Color(0xFF1E1E1E) : Colors.grey[100],
+                    borderRadius: BorderRadius.circular(12),
+                    border: isDark ? Border.all(color: Colors.grey[700]!, width: 1) : null,
+                  ),
+                  child: TextField(
+                    controller: _searchController,
+                    onChanged: _searchEvents,
+                    style: TextStyle(
+                      color: isDark ? Colors.white : Colors.black,
+                    ),
+                    decoration: InputDecoration(
+                      hintText: 'Search events by name, category, or keyword...',
+                      hintStyle: TextStyle(
+                        color: isDark ? Colors.grey[400] : Colors.grey[600],
+                      ),
+                      prefixIcon: Icon(
+                        Icons.search,
+                        color: isDark ? Colors.grey[400] : Colors.grey[600],
+                      ),
+                      border: InputBorder.none,
+                      contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                    ),
+                  ),
+                );
+              },
             ),
             const SizedBox(height: 20),
             Text(
@@ -1728,9 +1766,11 @@ class _ParticipantDashboardState extends State<ParticipantDashboard> {
   }
 
   Widget _buildProfileScreen() {
-    return Padding(
+    return SingleChildScrollView(
       padding: const EdgeInsets.all(16.0),
       child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.center,
         children: [
           CircleAvatar(
             radius: 50,
@@ -1794,9 +1834,23 @@ class _ParticipantDashboardState extends State<ParticipantDashboard> {
               ),
             );
           }),
-          _buildProfileOption('Settings', Icons.settings, () {}),
-          _buildProfileOption('Help & Support', Icons.help, () {}),
-          const Spacer(),
+          _buildProfileOption('Settings', Icons.settings, () {
+            Navigator.push(
+              context,
+              MaterialPageRoute(
+                builder: (context) => const SettingsScreen(),
+              ),
+            );
+          }),
+          _buildProfileOption('Help & Support', Icons.help, () {
+            Navigator.push(
+              context,
+              MaterialPageRoute(
+                builder: (context) => const HelpSupportScreen(),
+              ),
+            );
+          }),
+          const SizedBox(height: 32),
           SizedBox(
             width: double.infinity,
             child: ElevatedButton(

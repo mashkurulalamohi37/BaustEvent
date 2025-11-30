@@ -2,11 +2,13 @@ import 'package:flutter/material.dart';
 import 'package:fl_chart/fl_chart.dart';
 import 'package:intl/intl.dart';
 import '../models/event.dart';
+import '../services/theme_service.dart';
 
 class AnalyticsScreen extends StatelessWidget {
   final List<Event> events;
+  final bool showTopBar;
 
-  const AnalyticsScreen({super.key, required this.events});
+  const AnalyticsScreen({super.key, required this.events, this.showTopBar = true});
 
   @override
   Widget build(BuildContext context) {
@@ -68,81 +70,219 @@ class AnalyticsScreen extends StatelessWidget {
     }
     
 
-    return SingleChildScrollView(
-        padding: const EdgeInsets.all(16.0),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            // Overview Cards
-            Row(
-              children: [
-                Expanded(
-                  child: _buildStatCard(
-                    'Total Events',
-                    totalEvents.toString(),
-                    Icons.event,
-                    Colors.blue,
+    // Get or create theme service instance
+    final themeService = ThemeService.instance;
+    if (themeService == null) {
+      // If no instance exists, create one - this should rarely happen
+      final newService = ThemeService();
+      return ListenableBuilder(
+        listenable: newService,
+        builder: (context, _) {
+          // Force rebuild by reading the value fresh
+          final isDark = newService.isDarkMode;
+          return _buildContent(
+            context,
+            isDark,
+            totalEvents,
+            successRate,
+            totalParticipants,
+            avgParticipants,
+            successfulEvents,
+            completedEvents,
+            upcomingEvents,
+            ongoingEvents,
+            events,
+            monthlyData,
+            categoryCounts,
+          );
+        },
+      );
+    }
+    return ListenableBuilder(
+      listenable: themeService,
+      builder: (context, _) {
+        // Force rebuild by reading the value fresh
+        final isDark = themeService.isDarkMode;
+        return _buildContent(
+          context,
+          isDark,
+          totalEvents,
+          successRate,
+          totalParticipants,
+          avgParticipants,
+          successfulEvents,
+          completedEvents,
+          upcomingEvents,
+          ongoingEvents,
+          events,
+          monthlyData,
+          categoryCounts,
+        );
+      },
+    );
+  }
+
+  Widget _buildContent(
+    BuildContext context,
+    bool isDarkFromService,
+    int totalEvents,
+    int successRate,
+    int totalParticipants,
+    int avgParticipants,
+    int successfulEvents,
+    List<Event> completedEvents,
+    List<Event> upcomingEvents,
+    List<Event> ongoingEvents,
+    List<Event> allEvents,
+    Map<String, int> monthlyData,
+    Map<String, int> categoryCounts,
+  ) {
+        // Check if we're in admin dashboard (which forces light mode via Theme widget)
+        // Admin dashboard wraps with ThemeService.lightTheme, so if parent is light AND
+        // we're embedded (showTopBar is false), we're in admin dashboard
+        // Otherwise, always use ThemeService value to respect user's theme choice
+        final parentThemeIsLight = Theme.of(context).brightness == Brightness.light;
+        // Only force light mode if we're embedded (no top bar) AND parent is light (admin dashboard)
+        // Otherwise, use ThemeService value (respects user's dark/light mode choice)
+        final actualIsDark = (!showTopBar && parentThemeIsLight) ? false : isDarkFromService;
+        // Force dark mode colors when dark mode is active
+        final cardColor = actualIsDark ? const Color(0xFF1E1E1E) : Colors.white;
+        final textColor = actualIsDark ? Colors.white : Colors.black;
+        final secondaryTextColor = actualIsDark ? Colors.grey[300] : Colors.grey[700];
+        // Force scaffold background color based on theme
+        final scaffoldColor = actualIsDark ? const Color(0xFF121212) : Colors.white;
+        
+        return Container(
+          color: scaffoldColor,
+          child: Column(
+            children: [
+              // Top Bar - Only show if showTopBar is true
+              if (showTopBar)
+                Container(
+                  height: kToolbarHeight + MediaQuery.of(context).padding.top,
+                  padding: EdgeInsets.only(top: MediaQuery.of(context).padding.top),
+                  decoration: BoxDecoration(
+                    color: actualIsDark ? const Color(0xFF121212) : const Color(0xFF1976D2),
+                  ),
+                  child: Row(
+                    children: [
+                      IconButton(
+                        icon: const Icon(Icons.arrow_back, color: Colors.white),
+                        onPressed: () => Navigator.of(context).pop(),
+                      ),
+                      Expanded(
+                        child: Text(
+                          'Analytics View',
+                          style: const TextStyle(
+                            fontSize: 20,
+                            fontWeight: FontWeight.bold,
+                            color: Colors.white,
+                          ),
+                          textAlign: TextAlign.center,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ),
+                      const SizedBox(width: 48), // Balance the back button width
+                    ],
                   ),
                 ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: _buildStatCard(
-                    'Success Rate',
-                    '$successRate%',
-                    Icons.trending_up,
-                    Colors.green,
+              // Content
+              Expanded(
+                child: SingleChildScrollView(
+                  padding: const EdgeInsets.all(16.0),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      // Overview Cards - Upper Portion
+                      const SizedBox(height: 8),
+                Row(
+                children: [
+                  Expanded(
+                    child: _buildStatCard(
+                      context,
+                      actualIsDark,
+                      'Total Events',
+                      totalEvents.toString(),
+                      Icons.event,
+                      Colors.blue,
+                    ),
                   ),
-                ),
-              ],
-            ),
-            const SizedBox(height: 12),
-            Row(
-              children: [
-                Expanded(
-                  child: _buildStatCard(
-                    'Total Participants',
-                    totalParticipants.toString(),
-                    Icons.people,
-                    Colors.orange,
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: _buildStatCard(
+                      context,
+                      actualIsDark,
+                      'Success Rate',
+                      '$successRate%',
+                      Icons.trending_up,
+                      Colors.green,
+                    ),
                   ),
-                ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: _buildStatCard(
-                    'Avg/Event',
-                    avgParticipants.toString(),
-                    Icons.bar_chart,
-                    Colors.purple,
+                ],
+              ),
+              const SizedBox(height: 12),
+              Row(
+                children: [
+                  Expanded(
+                    child: _buildStatCard(
+                      context,
+                      actualIsDark,
+                      'Total Participants',
+                      totalParticipants.toString(),
+                      Icons.people,
+                      Colors.orange,
+                    ),
                   ),
-                ),
-              ],
-            ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: _buildStatCard(
+                      context,
+                      actualIsDark,
+                      'Avg/Event',
+                      avgParticipants.toString(),
+                      Icons.bar_chart,
+                      Colors.purple,
+                    ),
+                  ),
+                ],
+              ),
             const SizedBox(height: 24),
             
             // Success Rate Pie Chart
-            Card(
-              elevation: 2,
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-              child: Padding(
-                padding: const EdgeInsets.all(16.0),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    const Text(
-                      'Event Success Rate',
-                      style: TextStyle(
-                        fontSize: 18,
-                        fontWeight: FontWeight.bold,
+            Container(
+                  decoration: BoxDecoration(
+                    color: actualIsDark ? const Color(0xFF1E1E1E) : Colors.white,
+                    borderRadius: BorderRadius.circular(12),
+                    boxShadow: [
+                      BoxShadow(
+                        color: Colors.black.withOpacity(0.1),
+                        blurRadius: 4,
+                        offset: const Offset(0, 2),
                       ),
-                    ),
+                    ],
+                  ),
+                  child: Padding(
+                    padding: const EdgeInsets.all(16.0),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          'Event Success Rate',
+                          style: TextStyle(
+                            fontSize: 18,
+                            fontWeight: FontWeight.bold,
+                            color: actualIsDark ? Colors.white : Colors.black,
+                          ),
+                        ),
                     const SizedBox(height: 20),
-                    SizedBox(
-                      height: 200,
-                      child: Row(
-                        children: [
-                          Expanded(
-                            flex: 2,
-                            child: PieChart(
+                     SizedBox(
+                       height: 200,
+                       child: Row(
+                         crossAxisAlignment: CrossAxisAlignment.center,
+                         children: [
+                           Expanded(
+                             flex: 3,
+                             child: PieChart(
                               PieChartData(
                                 sections: [
                                   PieChartSectionData(
@@ -150,10 +290,10 @@ class AnalyticsScreen extends StatelessWidget {
                                     title: '$successfulEvents\nSuccessful',
                                     color: Colors.green,
                                     radius: 60,
-                                    titleStyle: const TextStyle(
+                                    titleStyle: TextStyle(
                                       fontSize: 12,
                                       fontWeight: FontWeight.bold,
-                                      color: Colors.white,
+                                      color: actualIsDark ? Colors.white : Colors.black,
                                     ),
                                   ),
                                   PieChartSectionData(
@@ -161,10 +301,10 @@ class AnalyticsScreen extends StatelessWidget {
                                     title: '${totalEvents - successfulEvents}\nOthers',
                                     color: Colors.grey,
                                     radius: 60,
-                                    titleStyle: const TextStyle(
+                                    titleStyle: TextStyle(
                                       fontSize: 12,
                                       fontWeight: FontWeight.bold,
-                                      color: Colors.white,
+                                      color: actualIsDark ? Colors.white : Colors.black,
                                     ),
                                   ),
                                 ],
@@ -173,16 +313,22 @@ class AnalyticsScreen extends StatelessWidget {
                               ),
                             ),
                           ),
-                          Expanded(
-                            child: Column(
-                              mainAxisAlignment: MainAxisAlignment.center,
-                              children: [
-                                _buildLegendItem(Colors.green, 'Successful', successfulEvents),
-                                const SizedBox(height: 12),
-                                _buildLegendItem(Colors.grey, 'Others', totalEvents - successfulEvents),
-                              ],
-                            ),
-                          ),
+                           Expanded(
+                             flex: 3,
+                             child: Padding(
+                               padding: const EdgeInsets.only(left: 4.0, right: 4.0),
+                               child: Column(
+                                 mainAxisAlignment: MainAxisAlignment.center,
+                                 crossAxisAlignment: CrossAxisAlignment.start,
+                                 mainAxisSize: MainAxisSize.min,
+                                 children: [
+                                   _buildLegendItem(actualIsDark, Colors.green, 'Success', successfulEvents),
+                                   const SizedBox(height: 8),
+                                   _buildLegendItem(actualIsDark, Colors.grey, 'Others', totalEvents - successfulEvents),
+                                 ],
+                               ),
+                             ),
+                           ),
                         ],
                       ),
                     ),
@@ -193,21 +339,31 @@ class AnalyticsScreen extends StatelessWidget {
             const SizedBox(height: 24),
             
             // Event Status Distribution
-            Card(
-              elevation: 2,
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-              child: Padding(
-                padding: const EdgeInsets.all(16.0),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    const Text(
-                      'Events by Status',
-                      style: TextStyle(
-                        fontSize: 18,
-                        fontWeight: FontWeight.bold,
+            Container(
+                  decoration: BoxDecoration(
+                    color: actualIsDark ? const Color(0xFF1E1E1E) : Colors.white,
+                    borderRadius: BorderRadius.circular(12),
+                    boxShadow: [
+                      BoxShadow(
+                        color: Colors.black.withOpacity(0.1),
+                        blurRadius: 4,
+                        offset: const Offset(0, 2),
                       ),
-                    ),
+                    ],
+                  ),
+                  child: Padding(
+                    padding: const EdgeInsets.all(16.0),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          'Events by Status',
+                          style: TextStyle(
+                            fontSize: 18,
+                            fontWeight: FontWeight.bold,
+                            color: actualIsDark ? Colors.white : Colors.black,
+                          ),
+                        ),
                     const SizedBox(height: 20),
                     SizedBox(
                       height: 200,
@@ -221,15 +377,22 @@ class AnalyticsScreen extends StatelessWidget {
                             bottomTitles: AxisTitles(
                               sideTitles: SideTitles(
                                 showTitles: true,
+                                reservedSize: 55,
                                 getTitlesWidget: (value, meta) {
                                   final index = value.toInt();
                                   final labels = ['Upcoming', 'Ongoing', 'Completed', 'Draft'];
                                   if (index >= 0 && index < labels.length) {
                                     return Padding(
-                                      padding: const EdgeInsets.only(top: 8.0),
+                                      padding: const EdgeInsets.only(top: 4.0),
                                       child: Text(
                                         labels[index],
-                                        style: const TextStyle(fontSize: 10),
+                                        style: TextStyle(
+                                          fontSize: 9,
+                                          color: actualIsDark ? Colors.grey[300] : null,
+                                        ),
+                                        overflow: TextOverflow.ellipsis,
+                                        maxLines: 1,
+                                        textAlign: TextAlign.center,
                                       ),
                                     );
                                   }
@@ -244,7 +407,10 @@ class AnalyticsScreen extends StatelessWidget {
                                 getTitlesWidget: (value, meta) {
                                   return Text(
                                     value.toInt().toString(),
-                                    style: const TextStyle(fontSize: 10),
+                                    style: TextStyle(
+                                      fontSize: 10,
+                                      color: actualIsDark ? Colors.grey[300] : null,
+                                    ),
                                   );
                                 },
                               ),
@@ -256,7 +422,31 @@ class AnalyticsScreen extends StatelessWidget {
                               sideTitles: SideTitles(showTitles: false),
                             ),
                           ),
-                          borderData: FlBorderData(show: false),
+                          borderData: FlBorderData(
+                            show: true,
+                            border: Border(
+                              bottom: BorderSide(
+                                color: actualIsDark ? Colors.grey[700]! : Colors.grey[300]!,
+                                width: 1,
+                              ),
+                              left: BorderSide(
+                                color: actualIsDark ? Colors.grey[700]! : Colors.grey[300]!,
+                                width: 1,
+                              ),
+                            ),
+                          ),
+                          gridData: FlGridData(
+                            show: true,
+                            drawVerticalLine: false,
+                            horizontalInterval: 1,
+                            getDrawingHorizontalLine: (value) {
+                              return FlLine(
+                                color: actualIsDark ? Colors.grey[800]! : Colors.grey[200]!,
+                                strokeWidth: 1,
+                                dashArray: [5, 5],
+                              );
+                            },
+                          ),
                           barGroups: [
                             BarChartGroupData(
                               x: 0,
@@ -295,7 +485,7 @@ class AnalyticsScreen extends StatelessWidget {
                               x: 3,
                               barRods: [
                                 BarChartRodData(
-                                  toY: events.where((e) => e.status == EventStatus.draft).length.toDouble(),
+                                  toY: allEvents.where((e) => e.status == EventStatus.draft).length.toDouble(),
                                   color: Colors.grey,
                                   width: 20,
                                   borderRadius: const BorderRadius.vertical(top: Radius.circular(4)),
@@ -314,27 +504,47 @@ class AnalyticsScreen extends StatelessWidget {
             
             // Monthly Events Trend
             if (monthlyData.values.any((v) => v > 0))
-              Card(
-                elevation: 2,
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                child: Padding(
-                  padding: const EdgeInsets.all(16.0),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      const Text(
-                        'Events Over Time (Last 6 Months)',
-                        style: TextStyle(
-                          fontSize: 18,
-                          fontWeight: FontWeight.bold,
+              Container(
+                    decoration: BoxDecoration(
+                      color: actualIsDark ? const Color(0xFF1E1E1E) : Colors.white,
+                      borderRadius: BorderRadius.circular(12),
+                      boxShadow: [
+                        BoxShadow(
+                          color: Colors.black.withOpacity(0.1),
+                          blurRadius: 4,
+                          offset: const Offset(0, 2),
                         ),
-                      ),
+                      ],
+                    ),
+                    child: Padding(
+                      padding: const EdgeInsets.all(16.0),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            'Events Over Time (Last 6 Months)',
+                            style: TextStyle(
+                              fontSize: 18,
+                              fontWeight: FontWeight.bold,
+                              color: actualIsDark ? Colors.white : Colors.black,
+                            ),
+                          ),
                       const SizedBox(height: 20),
                       SizedBox(
                         height: 200,
                         child: LineChart(
                           LineChartData(
-                            gridData: FlGridData(show: true),
+                            gridData: FlGridData(
+                              show: true,
+                              drawVerticalLine: false,
+                              horizontalInterval: 1,
+                              getDrawingHorizontalLine: (value) {
+                                return FlLine(
+                                  color: actualIsDark ? Colors.grey[800]! : Colors.grey[200]!,
+                                  strokeWidth: 1,
+                                );
+                              },
+                            ),
                             titlesData: FlTitlesData(
                               show: true,
                               bottomTitles: AxisTitles(
@@ -349,7 +559,10 @@ class AnalyticsScreen extends StatelessWidget {
                                         padding: const EdgeInsets.only(top: 8.0),
                                         child: Text(
                                           months[index].split(' ')[0],
-                                          style: const TextStyle(fontSize: 10),
+                                          style: TextStyle(
+                                            fontSize: 10,
+                                            color: actualIsDark ? Colors.grey[300] : null,
+                                          ),
                                         ),
                                       );
                                     }
@@ -376,7 +589,19 @@ class AnalyticsScreen extends StatelessWidget {
                                 sideTitles: SideTitles(showTitles: false),
                               ),
                             ),
-                            borderData: FlBorderData(show: true),
+                            borderData: FlBorderData(
+                              show: true,
+                              border: Border(
+                                bottom: BorderSide(
+                                  color: actualIsDark ? Colors.grey[700]! : Colors.grey[300]!,
+                                  width: 1,
+                                ),
+                                left: BorderSide(
+                                  color: actualIsDark ? Colors.grey[700]! : Colors.grey[300]!,
+                                  width: 1,
+                                ),
+                              ),
+                            ),
                             lineBarsData: [
                               LineChartBarData(
                                 spots: monthlyData.values.toList().asMap().entries.map((e) {
@@ -402,21 +627,31 @@ class AnalyticsScreen extends StatelessWidget {
             
             // Category Distribution
             if (categoryCounts.isNotEmpty)
-              Card(
-                elevation: 2,
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                child: Padding(
-                  padding: const EdgeInsets.all(16.0),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      const Text(
-                        'Events by Category',
-                        style: TextStyle(
-                          fontSize: 18,
-                          fontWeight: FontWeight.bold,
+              Container(
+                    decoration: BoxDecoration(
+                      color: actualIsDark ? const Color(0xFF1E1E1E) : Colors.white,
+                      borderRadius: BorderRadius.circular(12),
+                      boxShadow: [
+                        BoxShadow(
+                          color: Colors.black.withOpacity(0.1),
+                          blurRadius: 4,
+                          offset: const Offset(0, 2),
                         ),
-                      ),
+                      ],
+                    ),
+                    child: Padding(
+                      padding: const EdgeInsets.all(16.0),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            'Events by Category',
+                            style: TextStyle(
+                              fontSize: 18,
+                              fontWeight: FontWeight.bold,
+                              color: actualIsDark ? Colors.white : Colors.black,
+                            ),
+                          ),
                       const SizedBox(height: 20),
                       ...categoryCounts.entries.map((entry) {
                         final percentage = totalEvents > 0 
@@ -432,16 +667,17 @@ class AnalyticsScreen extends StatelessWidget {
                                 children: [
                                   Text(
                                     entry.key,
-                                    style: const TextStyle(
+                                    style: TextStyle(
                                       fontSize: 14,
                                       fontWeight: FontWeight.w500,
+                                      color: actualIsDark ? Colors.white : Colors.black,
                                     ),
                                   ),
                                   Text(
                                     '${entry.value} ($percentage%)',
                                     style: TextStyle(
                                       fontSize: 14,
-                                      color: Colors.grey[600],
+                                      color: actualIsDark ? Colors.grey[300] : Colors.grey[600],
                                     ),
                                   ),
                                 ],
@@ -449,7 +685,7 @@ class AnalyticsScreen extends StatelessWidget {
                               const SizedBox(height: 4),
                               LinearProgressIndicator(
                                 value: entry.value / totalEvents,
-                                backgroundColor: Colors.grey[200],
+                                backgroundColor: actualIsDark ? Colors.grey[800] : Colors.grey[200],
                                 valueColor: AlwaysStoppedAnimation<Color>(
                                   _getCategoryColor(entry.key),
                                 ),
@@ -463,18 +699,35 @@ class AnalyticsScreen extends StatelessWidget {
                   ),
                 ),
               ),
-          ],
-        ),
-    );
+                    ],
+                  ),
+                ),
+              ),
+            ],
+          ),
+        );
   }
 
-  Widget _buildStatCard(String title, String value, IconData icon, Color color) {
-    return Card(
-      elevation: 2,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+  Widget _buildStatCard(BuildContext context, bool actualIsDark, String title, String value, IconData icon, Color color) {
+    // Force dark mode colors when dark mode is active
+    final cardColor = actualIsDark ? const Color(0xFF1E1E1E) : Colors.white;
+    final titleTextColor = actualIsDark ? Colors.grey[300] : Colors.grey[700];
+    return Container(
+      decoration: BoxDecoration(
+        color: cardColor,
+        borderRadius: BorderRadius.circular(12),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.1),
+            blurRadius: 4,
+            offset: const Offset(0, 2),
+          ),
+        ],
+      ),
       child: Padding(
         padding: const EdgeInsets.all(16.0),
         child: Column(
+          mainAxisSize: MainAxisSize.min,
           children: [
             Icon(icon, size: 30, color: color),
             const SizedBox(height: 8),
@@ -486,12 +739,17 @@ class AnalyticsScreen extends StatelessWidget {
                 color: color,
               ),
             ),
+            const SizedBox(height: 4),
             Text(
               title,
-              style: const TextStyle(
+              style: TextStyle(
                 fontSize: 12,
-                color: Colors.grey,
+                color: titleTextColor,
               ),
+              textAlign: TextAlign.center,
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
+              softWrap: true,
             ),
           ],
         ),
@@ -499,23 +757,31 @@ class AnalyticsScreen extends StatelessWidget {
     );
   }
 
-  Widget _buildLegendItem(Color color, String label, int value) {
+  Widget _buildLegendItem(bool actualIsDark, Color color, String label, int value) {
     return Row(
       children: [
-        Container(
-          width: 16,
-          height: 16,
-          decoration: BoxDecoration(
-            color: color,
-            shape: BoxShape.circle,
+          Container(
+            width: 10,
+            height: 10,
+            decoration: BoxDecoration(
+              color: color,
+              shape: BoxShape.circle,
+            ),
           ),
-        ),
-        const SizedBox(width: 8),
-        Text(
-          '$label: $value',
-          style: const TextStyle(fontSize: 12),
-        ),
-      ],
+          const SizedBox(width: 4),
+          Flexible(
+            child: Text(
+              '$label: $value',
+              style: TextStyle(
+                fontSize: 10,
+                color: actualIsDark ? Colors.white : Colors.black,
+              ),
+              overflow: TextOverflow.ellipsis,
+              maxLines: 1,
+              softWrap: false,
+            ),
+          ),
+        ],
     );
   }
 

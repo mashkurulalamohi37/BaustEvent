@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:flutter/foundation.dart';
 import 'firebase_options.dart';
@@ -8,23 +9,55 @@ import 'screens/participant_dashboard.dart';
 import 'screens/admin_dashboard.dart';
 import 'services/firebase_user_service.dart';
 import 'services/firebase_notification_service.dart';
+import 'services/theme_service.dart';
 import 'models/user.dart';
+
+// NavigatorObserver to dismiss keyboard on route changes
+class KeyboardDismissingObserver extends NavigatorObserver {
+  @override
+  void didPush(Route<dynamic> route, Route<dynamic>? previousRoute) {
+    super.didPush(route, previousRoute);
+    _dismissKeyboard();
+  }
+
+  @override
+  void didPop(Route<dynamic> route, Route<dynamic>? previousRoute) {
+    super.didPop(route, previousRoute);
+    _dismissKeyboard();
+  }
+
+  @override
+  void didReplace({Route<dynamic>? newRoute, Route<dynamic>? oldRoute}) {
+    super.didReplace(newRoute: newRoute, oldRoute: oldRoute);
+    _dismissKeyboard();
+  }
+
+  void _dismissKeyboard() {
+    SystemChannels.textInput.invokeMethod('TextInput.hide');
+  }
+}
 
 class LoadingScreen extends StatelessWidget {
   const LoadingScreen({super.key});
 
   @override
   Widget build(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
     return Scaffold(
       body: Container(
-        decoration: const BoxDecoration(
+        decoration: BoxDecoration(
           gradient: LinearGradient(
             begin: Alignment.topCenter,
             end: Alignment.bottomCenter,
-            colors: [
-              Color(0xFF1976D2),
-              Color(0xFF42A5F5),
-            ],
+            colors: isDark
+                ? [
+                    const Color(0xFF0D47A1),
+                    const Color(0xFF1565C0),
+                  ]
+                : [
+                    const Color(0xFF1976D2),
+                    const Color(0xFF42A5F5),
+                  ],
           ),
         ),
         child: const Center(
@@ -109,24 +142,37 @@ class EventBridgeApp extends StatefulWidget {
 }
 
 class _EventBridgeAppState extends State<EventBridgeApp> {
+  late final ThemeService _themeService;
+
+  @override
+  void initState() {
+    super.initState();
+    _themeService = ThemeService(); // Uses singleton pattern
+  }
+
+  @override
+  void dispose() {
+    // Don't dispose singleton - it's shared
+    super.dispose();
+  }
+
   @override
   Widget build(BuildContext context) {
-    return MaterialApp(
-      title: 'EventBridge',
-      theme: ThemeData(
-        primarySwatch: Colors.blue,
-        colorScheme: ColorScheme.fromSeed(
-          seedColor: Colors.blue,
-          brightness: Brightness.light,
-        ),
-        useMaterial3: true,
-        appBarTheme: const AppBarTheme(
-          centerTitle: true,
-          elevation: 0,
-        ),
-      ),
-      home: const AuthWrapper(),
-      debugShowCheckedModeBanner: false,
+    return ListenableBuilder(
+      listenable: _themeService,
+      builder: (context, child) {
+        final isDark = _themeService.isDarkMode;
+        return MaterialApp(
+          key: ValueKey('theme_$isDark'), // Force rebuild on theme change
+          title: 'EventBridge',
+          theme: ThemeService.lightTheme,
+          darkTheme: ThemeService.darkTheme,
+          themeMode: isDark ? ThemeMode.dark : ThemeMode.light,
+          home: const AuthWrapper(),
+          debugShowCheckedModeBanner: false,
+          navigatorObservers: [KeyboardDismissingObserver()],
+        );
+      },
     );
   }
 }

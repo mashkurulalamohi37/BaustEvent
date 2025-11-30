@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:share_plus/share_plus.dart';
 import '../services/qr_service.dart';
 
 class QRCodeScreen extends StatelessWidget {
@@ -141,13 +142,33 @@ class QRCodeScreen extends StatelessWidget {
     );
   }
 
-  void _shareQRCode(BuildContext context) {
-    // TODO: Implement sharing functionality
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(
-        content: Text('Share functionality coming soon'),
-        backgroundColor: Colors.blue,
-      ),
-    );
+  Future<void> _shareQRCode(BuildContext context) async {
+    try {
+      // Share the QR code data as text
+      final result = await Share.share(
+        'Event Registration QR Code\n\n$title\n$subtitle\n\nQR Code Data: $data\n\nShow this QR code at the event for check-in.',
+        subject: title,
+      );
+      
+      if (result.status == ShareResultStatus.success) {
+        if (context.mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('QR code shared successfully'),
+              backgroundColor: Colors.green,
+            ),
+          );
+        }
+      }
+    } catch (e) {
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Failed to share: $e'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    }
   }
 }

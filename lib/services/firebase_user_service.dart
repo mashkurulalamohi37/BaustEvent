@@ -1,6 +1,6 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_core/firebase_core.dart';
-import 'package:firebase_auth/firebase_auth.dart' hide User show FirebaseAuthException, FirebaseAuth;
+import 'package:firebase_auth/firebase_auth.dart' hide User show FirebaseAuthException, FirebaseAuth, EmailAuthProvider;
 import '../models/user.dart';
 import '../firebase_options.dart';
 
@@ -389,6 +389,56 @@ class FirebaseUserService {
     } catch (e) {
       print('Error sending password reset email: $e');
       throw Exception('Error sending password reset email. Please try again.');
+    }
+  }
+
+  // Change password (requires reauthentication)
+  static Future<void> changePassword({
+    required String currentPassword,
+    required String newPassword,
+  }) async {
+    try {
+      final user = _auth.currentUser;
+      if (user == null) {
+        throw Exception('No user is currently signed in.');
+      }
+
+      if (user.email == null) {
+        throw Exception('User email is not available.');
+      }
+
+      // Reauthenticate user with current password
+      final credential = EmailAuthProvider.credential(
+        email: user.email!,
+        password: currentPassword,
+      );
+
+      await user.reauthenticateWithCredential(credential);
+
+      // Update password
+      await user.updatePassword(newPassword);
+
+      print('Password changed successfully');
+    } on FirebaseAuthException catch (e) {
+      print('Password change error: ${e.code} - ${e.message}');
+      // Re-throw with user-friendly message
+      if (e.code == 'wrong-password') {
+        throw Exception('Current password is incorrect. Please try again.');
+      } else if (e.code == 'weak-password') {
+        throw Exception('New password is too weak. Please use a stronger password.');
+      } else if (e.code == 'requires-recent-login') {
+        throw Exception('Please sign out and sign in again before changing your password.');
+      } else if (e.code == 'user-mismatch') {
+        throw Exception('Authentication error. Please try again.');
+      } else {
+        throw Exception('Failed to change password: ${e.message ?? e.code}');
+      }
+    } catch (e) {
+      print('Error changing password: $e');
+      if (e.toString().contains('Exception:')) {
+        rethrow;
+      }
+      throw Exception('Error changing password. Please try again.');
     }
   }
 

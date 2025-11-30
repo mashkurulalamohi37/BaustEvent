@@ -16,6 +16,9 @@ import '../services/firebase_notification_service.dart';
 import 'edit_profile_screen.dart';
 import 'analytics_screen.dart';
 import 'notifications_screen.dart';
+import 'settings_screen.dart';
+import 'help_support_screen.dart';
+import '../services/theme_service.dart';
 
 class OrganizerDashboard extends StatefulWidget {
   final String? userId;
@@ -329,6 +332,7 @@ class _OrganizerDashboardState extends State<OrganizerDashboard> {
           _buildHomeScreen(),
           _buildCreateEventScreen(),
           _buildMyEventsScreen(),
+          _buildAnalyticsScreen(),
           _buildProfileScreen(),
         ],
       ),
@@ -353,6 +357,11 @@ class _OrganizerDashboardState extends State<OrganizerDashboard> {
             icon: Icon(Icons.event_outlined),
             activeIcon: Icon(Icons.event),
             label: 'My Events',
+          ),
+          BottomNavigationBarItem(
+            icon: Icon(Icons.analytics_outlined),
+            activeIcon: Icon(Icons.analytics),
+            label: 'Analytics',
           ),
           BottomNavigationBarItem(
             icon: Icon(Icons.person_outline),
@@ -470,12 +479,9 @@ class _OrganizerDashboardState extends State<OrganizerDashboard> {
               shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
               child: InkWell(
                 onTap: () {
-                  Navigator.push(
-                    context,
-                    MaterialPageRoute(
-                      builder: (context) => AnalyticsScreen(events: _myEvents),
-                    ),
-                  );
+                  setState(() {
+                    _selectedIndex = 3; // Switch to Analytics tab
+                  });
                 },
                 borderRadius: BorderRadius.circular(12),
                 child: Padding(
@@ -913,6 +919,10 @@ class _OrganizerDashboardState extends State<OrganizerDashboard> {
     );
   }
 
+  Widget _buildAnalyticsScreen() {
+    return AnalyticsScreen(events: _myEvents, showTopBar: false);
+  }
+
   Widget _buildProfileScreen() {
     return Padding(
       padding: const EdgeInsets.all(16.0),
@@ -961,17 +971,22 @@ class _OrganizerDashboardState extends State<OrganizerDashboard> {
               _refreshData();
             }
           }),
-          _buildProfileOption('Event Analytics', Icons.analytics, () {
+          _buildProfileOption('Settings', Icons.settings, () {
             Navigator.push(
               context,
               MaterialPageRoute(
-                builder: (context) => AnalyticsScreen(events: _myEvents),
+                builder: (context) => const SettingsScreen(),
               ),
             );
           }),
-          _buildProfileOption('Participant Management', Icons.people, () {}),
-          _buildProfileOption('Settings', Icons.settings, () {}),
-          _buildProfileOption('Help & Support', Icons.help, () {}),
+          _buildProfileOption('Help & Support', Icons.help, () {
+            Navigator.push(
+              context,
+              MaterialPageRoute(
+                builder: (context) => const HelpSupportScreen(),
+              ),
+            );
+          }),
           const Spacer(),
           SizedBox(
             width: double.infinity,

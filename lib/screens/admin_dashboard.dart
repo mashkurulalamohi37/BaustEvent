@@ -14,6 +14,7 @@ import 'event_details_screen.dart';
 import 'edit_event_screen.dart';
 import 'manage_participants_screen.dart';
 import 'notifications_screen.dart';
+import '../services/theme_service.dart';
 
 class AdminDashboard extends StatefulWidget {
   final String? userId;
@@ -483,39 +484,44 @@ class _AdminDashboardState extends State<AdminDashboard> {
   @override
   Widget build(BuildContext context) {
     if (_isLoading) {
-      return const Scaffold(
-        body: Center(child: CircularProgressIndicator()),
+      return Theme(
+        data: ThemeService.lightTheme,
+        child: const Scaffold(
+          body: Center(child: CircularProgressIndicator()),
+        ),
       );
     }
 
-    return PopScope(
-      canPop: false,
-      onPopInvoked: (didPop) async {
-        if (didPop) return;
-        // Show confirmation dialog before exiting
-        final shouldExit = await showDialog<bool>(
-          context: context,
-          builder: (context) => AlertDialog(
-            title: const Text('Exit App?'),
-            content: const Text('Do you want to exit the app?'),
-            actions: [
-              TextButton(
-                onPressed: () => Navigator.pop(context, false),
-                child: const Text('Cancel'),
-              ),
-              TextButton(
-                onPressed: () => Navigator.pop(context, true),
-                child: const Text('Exit'),
-              ),
-            ],
-          ),
-        );
-        if (shouldExit == true && mounted) {
-          // Exit the app
-          SystemNavigator.pop();
-        }
-      },
-      child: Scaffold(
+    return Theme(
+      data: ThemeService.lightTheme,
+      child: PopScope(
+        canPop: false,
+        onPopInvoked: (didPop) async {
+          if (didPop) return;
+          // Show confirmation dialog before exiting
+          final shouldExit = await showDialog<bool>(
+            context: context,
+            builder: (context) => AlertDialog(
+              title: const Text('Exit App?'),
+              content: const Text('Do you want to exit the app?'),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.pop(context, false),
+                  child: const Text('Cancel'),
+                ),
+                TextButton(
+                  onPressed: () => Navigator.pop(context, true),
+                  child: const Text('Exit'),
+                ),
+              ],
+            ),
+          );
+          if (shouldExit == true && mounted) {
+            // Exit the app
+            SystemNavigator.pop();
+          }
+        },
+        child: Scaffold(
         appBar: AppBar(
           title: const Text('Admin Dashboard'),
           actions: [
@@ -525,7 +531,10 @@ class _AdminDashboardState extends State<AdminDashboard> {
               Navigator.push(
                 context,
                 MaterialPageRoute(
-                  builder: (context) => NotificationsScreen(userId: _currentUser?.id ?? widget.userId),
+                  builder: (context) => Theme(
+                    data: ThemeService.lightTheme,
+                    child: NotificationsScreen(userId: _currentUser?.id ?? widget.userId),
+                  ),
                 ),
               );
             },
@@ -579,6 +588,7 @@ class _AdminDashboardState extends State<AdminDashboard> {
             label: 'Analytics',
           ),
         ],
+      ),
       ),
       ),
     );
@@ -835,9 +845,12 @@ class _AdminDashboardState extends State<AdminDashboard> {
                           Navigator.push(
                             context,
                             MaterialPageRoute(
-                              builder: (context) => EventDetailsScreen(
-                                event: event,
-                                userId: _currentUser?.id,
+                              builder: (context) => Theme(
+                                data: ThemeService.lightTheme,
+                                child: EventDetailsScreen(
+                                  event: event,
+                                  userId: _currentUser?.id,
+                                ),
                               ),
                             ),
                           );
@@ -845,14 +858,20 @@ class _AdminDashboardState extends State<AdminDashboard> {
                           Navigator.push(
                             context,
                             MaterialPageRoute(
-                              builder: (context) => EditEventScreen(event: event),
+                              builder: (context) => Theme(
+                                data: ThemeService.lightTheme,
+                                child: EditEventScreen(event: event),
+                              ),
                             ),
                           ).then((_) => _loadData());
                         } else if (value == 'manage') {
                           Navigator.push(
                             context,
                             MaterialPageRoute(
-                              builder: (context) => ManageParticipantsScreen(event: event),
+                              builder: (context) => Theme(
+                                data: ThemeService.lightTheme,
+                                child: ManageParticipantsScreen(event: event),
+                              ),
                             ),
                           );
                         } else if (value == 'delete') {
@@ -1228,7 +1247,7 @@ class _AdminDashboardState extends State<AdminDashboard> {
   
   // Build Analytics Screen
   Widget _buildAnalyticsScreen() {
-    return AnalyticsScreen(events: _allEvents);
+    return AnalyticsScreen(events: _allEvents, showTopBar: false);
   }
   
   // Helper methods

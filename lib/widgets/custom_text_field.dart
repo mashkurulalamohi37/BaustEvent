@@ -10,6 +10,7 @@ class CustomTextField extends StatelessWidget {
   final String? Function(String?)? validator;
   final VoidCallback? onTap;
   final bool readOnly;
+  final Widget? suffixIcon;
 
   const CustomTextField({
     super.key,
@@ -22,6 +23,7 @@ class CustomTextField extends StatelessWidget {
     this.validator,
     this.onTap,
     this.readOnly = false,
+    this.suffixIcon,
   });
 
   @override
@@ -37,6 +39,7 @@ class CustomTextField extends StatelessWidget {
         labelText: label,
         hintText: hint,
         prefixIcon: Icon(icon),
+        suffixIcon: suffixIcon,
         border: OutlineInputBorder(
           borderRadius: BorderRadius.circular(12),
         ),

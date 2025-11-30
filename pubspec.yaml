@@ -56,6 +56,12 @@ dependencies:
   
   # Local storage
   shared_preferences: ^2.2.2
+  
+  # Share functionality
+  share_plus: ^10.1.2
+  
+  # URL launcher for email/phone
+  url_launcher: ^6.3.1
 
 dev_dependencies:
   flutter_test:

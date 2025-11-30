@@ -231,31 +231,40 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
       body: _isLoading
           ? const Center(child: CircularProgressIndicator())
           : _notifications.isEmpty
-              ? Center(
-                  child: Column(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      Icon(Icons.notifications_none, size: 64, color: Colors.grey[400]),
-                      const SizedBox(height: 16),
-                      Text(
-                        'No notifications',
-                        style: TextStyle(
-                          fontSize: 18,
-                          fontWeight: FontWeight.bold,
-                          color: Colors.grey[600],
-                        ),
+              ? Builder(
+                  builder: (context) {
+                    final isDark = Theme.of(context).brightness == Brightness.dark;
+                    return Center(
+                      child: Column(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          Icon(
+                            Icons.notifications_none,
+                            size: 64,
+                            color: isDark ? Colors.grey[600] : Colors.grey[400],
+                          ),
+                          const SizedBox(height: 16),
+                          Text(
+                            'No notifications',
+                            style: TextStyle(
+                              fontSize: 18,
+                              fontWeight: FontWeight.bold,
+                              color: isDark ? Colors.grey[300] : Colors.grey[600],
+                            ),
+                          ),
+                          const SizedBox(height: 8),
+                          Text(
+                            'You\'ll see notifications here when there are updates',
+                            style: TextStyle(
+                              fontSize: 14,
+                              color: isDark ? Colors.grey[400] : Colors.grey[500],
+                            ),
+                            textAlign: TextAlign.center,
+                          ),
+                        ],
                       ),
-                      const SizedBox(height: 8),
-                      Text(
-                        'You\'ll see notifications here when there are updates',
-                        style: TextStyle(
-                          fontSize: 14,
-                          color: Colors.grey[500],
-                        ),
-                        textAlign: TextAlign.center,
-                      ),
-                    ],
-                  ),
+                    );
+                  },
                 )
               : RefreshIndicator(
                   onRefresh: () async {
@@ -271,10 +280,13 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
                       final createdAt = notification['createdAt'] as String?;
                       final date = createdAt != null ? DateTime.tryParse(createdAt) : null;
                       
+                      final isDark = Theme.of(context).brightness == Brightness.dark;
                       return Card(
                         margin: const EdgeInsets.only(bottom: 12),
                         elevation: isRead ? 1 : 3,
-                        color: isRead ? Colors.white : Colors.blue.shade50,
+                        color: isRead 
+                            ? (isDark ? const Color(0xFF1E1E1E) : Colors.white)
+                            : (isDark ? const Color(0xFF1E3A5F) : Colors.blue.shade50),
                         child: ListTile(
                           leading: CircleAvatar(
                             backgroundColor: _getNotificationColor(type),
@@ -287,20 +299,26 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
                             _getNotificationTitle(notification),
                             style: TextStyle(
                               fontWeight: isRead ? FontWeight.normal : FontWeight.bold,
+                              color: isDark ? Colors.white : null,
                             ),
                           ),
                           subtitle: Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
                               const SizedBox(height: 4),
-                              Text(_getNotificationBody(notification)),
+                              Text(
+                                _getNotificationBody(notification),
+                                style: TextStyle(
+                                  color: isDark ? Colors.grey[300] : null,
+                                ),
+                              ),
                               if (date != null) ...[
                                 const SizedBox(height: 4),
                                 Text(
                                   DateFormat('MMM d, y • h:mm a').format(date),
                                   style: TextStyle(
                                     fontSize: 12,
-                                    color: Colors.grey[600],
+                                    color: isDark ? Colors.grey[400] : Colors.grey[600],
                                   ),
                                 ),
                               ],
@@ -311,8 +329,8 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
                               : Container(
                                   width: 8,
                                   height: 8,
-                                  decoration: const BoxDecoration(
-                                    color: Colors.blue,
+                                  decoration: BoxDecoration(
+                                    color: isDark ? Colors.blue[300] : Colors.blue,
                                     shape: BoxShape.circle,
                                   ),
                                 ),
