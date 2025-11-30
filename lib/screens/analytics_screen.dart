@@ -67,19 +67,8 @@ class AnalyticsScreen extends StatelessWidget {
       }
     }
     
-    // Participation rate per event
-    final participationRates = events.map((e) {
-      return e.maxParticipants > 0 
-          ? (e.participants.length / e.maxParticipants) * 100 
-          : 0.0;
-    }).toList();
 
-    return Scaffold(
-      appBar: AppBar(
-        title: const Text('Event Analytics'),
-        elevation: 0,
-      ),
-      body: SingleChildScrollView(
+    return SingleChildScrollView(
         padding: const EdgeInsets.all(16.0),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -476,7 +465,6 @@ class AnalyticsScreen extends StatelessWidget {
               ),
           ],
         ),
-      ),
     );
   }
 

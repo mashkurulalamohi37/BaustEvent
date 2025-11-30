@@ -2,7 +2,6 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:intl/intl.dart';
-import '../models/event.dart';
 import '../services/firebase_event_service.dart';
 import 'event_details_screen.dart';
 

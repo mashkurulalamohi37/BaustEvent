@@ -1,12 +1,9 @@
 import 'dart:io';
 import 'package:flutter/material.dart';
-import 'package:uuid/uuid.dart';
 import 'package:intl/intl.dart';
 import 'package:image_picker/image_picker.dart';
 import '../models/event.dart';
-import '../models/user.dart';
 import '../services/firebase_event_service.dart';
-import '../services/firebase_user_service.dart';
 import '../services/firebase_storage_service.dart';
 import '../widgets/custom_text_field.dart';
 
@@ -32,7 +29,6 @@ class _EditEventScreenState extends State<EditEventScreen> {
   String _selectedCategory = 'Seminars';
   EventStatus _selectedStatus = EventStatus.published;
   bool _isLoading = false;
-  User? _currentUser;
   XFile? _selectedImage;
   String? _currentImageUrl;
   DateTime? _registrationCloseDate;
@@ -68,7 +64,6 @@ class _EditEventScreenState extends State<EditEventScreen> {
   void initState() {
     super.initState();
     _loadEvent();
-    _loadUser();
   }
 
   void _loadEvent() {
@@ -147,10 +142,6 @@ class _EditEventScreenState extends State<EditEventScreen> {
     }
   }
 
-  Future<void> _loadUser() async {
-    final user = await FirebaseUserService.getCurrentUserWithDetails();
-    setState(() => _currentUser = user);
-  }
 
   @override
   void dispose() {

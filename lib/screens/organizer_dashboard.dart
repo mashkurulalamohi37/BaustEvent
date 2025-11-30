@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:intl/intl.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'event_details_screen.dart';
@@ -262,10 +263,37 @@ class _OrganizerDashboardState extends State<OrganizerDashboard> {
   @override
   Widget build(BuildContext context) {
     print('OrganizerDashboard build() called - isLoading: $_isLoading, events: ${_myEvents.length}');
-    return Scaffold(
-      appBar: AppBar(
-        title: const Text('EventBridge - Organizer'),
-        actions: [
+    return PopScope(
+      canPop: false,
+      onPopInvoked: (didPop) async {
+        if (didPop) return;
+        // Show confirmation dialog before exiting
+        final shouldExit = await showDialog<bool>(
+          context: context,
+          builder: (context) => AlertDialog(
+            title: const Text('Exit App?'),
+            content: const Text('Do you want to exit the app?'),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(context, false),
+                child: const Text('Cancel'),
+              ),
+              TextButton(
+                onPressed: () => Navigator.pop(context, true),
+                child: const Text('Exit'),
+              ),
+            ],
+          ),
+        );
+        if (shouldExit == true && mounted) {
+          // Exit the app
+          SystemNavigator.pop();
+        }
+      },
+      child: Scaffold(
+        appBar: AppBar(
+          title: const Text('EventBridge - Organizer'),
+          actions: [
           IconButton(
             icon: const Icon(Icons.notifications_outlined),
             onPressed: () {
@@ -332,6 +360,7 @@ class _OrganizerDashboardState extends State<OrganizerDashboard> {
             label: 'Profile',
           ),
         ],
+      ),
       ),
     );
   }

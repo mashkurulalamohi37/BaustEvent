@@ -33,7 +33,6 @@ class _CreateEventScreenState extends State<CreateEventScreen> {
   bool _isLoading = false;
   User? _currentUser;
   XFile? _selectedImage;
-  String? _imageUrl;
   DateTime? _registrationCloseDate;
   final TextEditingController _registrationCloseController = TextEditingController();
   bool _paymentRequired = false;

@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:intl/intl.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import '../models/user.dart';
@@ -13,7 +14,6 @@ import 'event_details_screen.dart';
 import 'edit_event_screen.dart';
 import 'manage_participants_screen.dart';
 import 'notifications_screen.dart';
-import '../widgets/event_card.dart';
 
 class AdminDashboard extends StatefulWidget {
   final String? userId;
@@ -185,7 +185,7 @@ class _AdminDashboardState extends State<AdminDashboard> {
       setState(() => _isLoading = false);
     }
   }
-  
+
   // Set up listener for notifications from Firestore
   void _setupNotificationListener() {
     try {
@@ -432,9 +432,8 @@ class _AdminDashboardState extends State<AdminDashboard> {
         
         // Try to delete Firebase Auth user (only works if it's the current user)
         // For other users, they need to be deleted from Firebase Console or via Cloud Function
-        bool authDeleted = false;
         try {
-          authDeleted = await FirebaseUserService.deleteAuthUser(user.id);
+          await FirebaseUserService.deleteAuthUser(user.id);
         } catch (e) {
           print('Could not delete Firebase Auth user: $e');
         }
@@ -489,10 +488,37 @@ class _AdminDashboardState extends State<AdminDashboard> {
       );
     }
 
-    return Scaffold(
-      appBar: AppBar(
-        title: const Text('Admin Dashboard'),
-        actions: [
+    return PopScope(
+      canPop: false,
+      onPopInvoked: (didPop) async {
+        if (didPop) return;
+        // Show confirmation dialog before exiting
+        final shouldExit = await showDialog<bool>(
+          context: context,
+          builder: (context) => AlertDialog(
+            title: const Text('Exit App?'),
+            content: const Text('Do you want to exit the app?'),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(context, false),
+                child: const Text('Cancel'),
+              ),
+              TextButton(
+                onPressed: () => Navigator.pop(context, true),
+                child: const Text('Exit'),
+              ),
+            ],
+          ),
+        );
+        if (shouldExit == true && mounted) {
+          // Exit the app
+          SystemNavigator.pop();
+        }
+      },
+      child: Scaffold(
+        appBar: AppBar(
+          title: const Text('Admin Dashboard'),
+          actions: [
           IconButton(
             icon: const Icon(Icons.notifications_outlined),
             onPressed: () {
@@ -554,6 +580,7 @@ class _AdminDashboardState extends State<AdminDashboard> {
           ),
         ],
       ),
+      ),
     );
   }
 
@@ -577,13 +604,11 @@ class _AdminDashboardState extends State<AdminDashboard> {
       ),
     );
   }
-  
+
   // Build Requests Screen
   Widget _buildRequestsScreen() {
     return RefreshIndicator(
-      onRefresh: () async {
-        await _refreshRequests();
-      },
+      onRefresh: _refreshRequests,
       color: Colors.blue,
       child: SingleChildScrollView(
         physics: const AlwaysScrollableScrollPhysics(),
@@ -591,7 +616,6 @@ class _AdminDashboardState extends State<AdminDashboard> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // Welcome Card
             Card(
               elevation: 2,
               child: Padding(
@@ -606,18 +630,12 @@ class _AdminDashboardState extends State<AdminDashboard> {
                         children: [
                           Text(
                             'Welcome, ${_currentUser?.name ?? 'Admin'}!',
-                            style: const TextStyle(
-                              fontSize: 20,
-                              fontWeight: FontWeight.bold,
-                            ),
+                            style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
                           ),
                           const SizedBox(height: 4),
                           Text(
                             _currentUser?.email ?? '',
-                            style: TextStyle(
-                              fontSize: 14,
-                              color: Colors.grey[600],
-                            ),
+                            style: TextStyle(fontSize: 14, color: Colors.grey[600]),
                           ),
                         ],
                       ),
@@ -627,17 +645,12 @@ class _AdminDashboardState extends State<AdminDashboard> {
               ),
             ),
             const SizedBox(height: 24),
-            
-            // Pending Requests Section
             Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
                 const Text(
                   'Pending Organizer Requests',
-                  style: TextStyle(
-                    fontSize: 20,
-                    fontWeight: FontWeight.bold,
-                  ),
+                  style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
                 ),
                 Chip(
                   label: Text('${_pendingRequests.length}'),
@@ -647,7 +660,6 @@ class _AdminDashboardState extends State<AdminDashboard> {
               ],
             ),
             const SizedBox(height: 16),
-            
             if (_pendingRequests.isEmpty)
               Card(
                 child: Padding(
@@ -658,18 +670,12 @@ class _AdminDashboardState extends State<AdminDashboard> {
                       const SizedBox(height: 16),
                       Text(
                         'No pending requests',
-                        style: TextStyle(
-                          fontSize: 16,
-                          color: Colors.grey[600],
-                        ),
+                        style: TextStyle(fontSize: 16, color: Colors.grey[600]),
                       ),
                       const SizedBox(height: 8),
                       Text(
                         'All organizer requests have been reviewed.',
-                        style: TextStyle(
-                          fontSize: 14,
-                          color: Colors.grey[500],
-                        ),
+                        style: TextStyle(fontSize: 14, color: Colors.grey[500]),
                         textAlign: TextAlign.center,
                       ),
                     ],
@@ -679,10 +685,8 @@ class _AdminDashboardState extends State<AdminDashboard> {
             else
               ..._pendingRequests.map((request) {
                 final requestedAt = request['requestedAt'] as String?;
-                final date = requestedAt != null 
-                    ? DateTime.tryParse(requestedAt) 
-                    : null;
-                
+                final date = requestedAt != null ? DateTime.tryParse(requestedAt) : null;
+
                 return Card(
                   margin: const EdgeInsets.only(bottom: 12),
                   elevation: 2,
@@ -698,10 +702,7 @@ class _AdminDashboardState extends State<AdminDashboard> {
                             Expanded(
                               child: Text(
                                 request['name'] as String? ?? 'Unknown',
-                                style: const TextStyle(
-                                  fontSize: 18,
-                                  fontWeight: FontWeight.bold,
-                                ),
+                                style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
                               ),
                             ),
                           ],
@@ -745,7 +746,7 @@ class _AdminDashboardState extends State<AdminDashboard> {
       ),
     );
   }
-  
+
   // Build Events Screen
   Widget _buildEventsScreen() {
     return RefreshIndicator(
@@ -1060,7 +1061,6 @@ class _AdminDashboardState extends State<AdminDashboard> {
   }
   
   Widget _buildUserCard(User user) {
-    final isParticipant = user.type == UserType.participant;
     final isOrganizer = user.type == UserType.organizer;
     final isAdmin = user.isAdmin;
     

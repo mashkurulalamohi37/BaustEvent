@@ -68,7 +68,7 @@ class WelcomeScreen extends StatelessWidget {
                 ),
                 const SizedBox(height: 8),
                 const Text(
-                  'Your gateway to university events',
+                  'Your gateway to BAUST events',
                   style: TextStyle(
                     fontSize: 16,
                     color: Colors.white60,

@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:firebase_core/firebase_core.dart';
+import 'package:flutter/foundation.dart';
+import 'firebase_options.dart';
 import 'screens/welcome_screen.dart';
 import 'screens/organizer_dashboard.dart';
 import 'screens/participant_dashboard.dart';
@@ -52,18 +54,47 @@ class LoadingScreen extends StatelessWidget {
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   
+  // Initialize Firebase - critical for app functionality
+  bool firebaseInitialized = false;
   try {
-    // Initialize Firebase first
-    await Firebase.initializeApp();
-    print('Firebase initialized');
+    // Check if Firebase is already initialized (especially important for web hot reload)
+    if (Firebase.apps.isEmpty) {
+      print('Initializing Firebase...');
+      // Initialize Firebase with platform-specific options
+      await Firebase.initializeApp(
+        options: DefaultFirebaseOptions.currentPlatform,
+      );
+      firebaseInitialized = true;
+      print('Firebase initialized successfully');
+    } else {
+      firebaseInitialized = true;
+      print('Firebase already initialized (${Firebase.apps.length} app(s))');
+    }
     
     // Initialize notifications (non-blocking - don't wait if it fails)
-    FirebaseNotificationService.initialize().catchError((e) {
-      print('Notification initialization failed (non-critical): $e');
-    });
-  } catch (e) {
+    // Skip on web as notifications work differently
+    if (!kIsWeb && firebaseInitialized) {
+      FirebaseNotificationService.initialize().catchError((e) {
+        print('Notification initialization failed (non-critical): $e');
+      });
+    }
+  } catch (e, stackTrace) {
     print('Firebase initialization failed: $e');
-    // Continue anyway - the app will show error if needed
+    print('Error type: ${e.runtimeType}');
+    print('Stack trace: $stackTrace');
+    // On web, this might be a configuration issue
+    if (kIsWeb) {
+      print('⚠️ Web Firebase initialization error. Make sure Firebase is configured for web.');
+      print('For web, you may need to add Firebase configuration to web/index.html');
+    }
+    firebaseInitialized = false;
+    // Don't continue if Firebase fails - it's critical
+    // The app will show errors when trying to use Firebase services
+  }
+  
+  // Store initialization status for later checks
+  if (!firebaseInitialized) {
+    print('⚠️ WARNING: Firebase initialization failed. Some features may not work.');
   }
   
   // Run the app after initialization
@@ -122,9 +153,9 @@ class _AuthWrapperState extends State<AuthWrapper> {
       // Check if user is already logged in with timeout to prevent hanging
       final user = await FirebaseUserService.getCurrentUserWithDetails()
           .timeout(
-            const Duration(seconds: 10),
+            const Duration(seconds: 5), // Reduced timeout
             onTimeout: () {
-              print('Auth check timed out');
+              print('Auth check timed out - proceeding without user');
               return null;
             },
           );
@@ -139,9 +170,21 @@ class _AuthWrapperState extends State<AuthWrapper> {
       if (mounted) {
         setState(() {
           _isLoading = false;
+          _currentUser = null; // Ensure we proceed to welcome screen
         });
       }
     }
+    
+    // Safety fallback - if still loading after 6 seconds, force proceed
+    Future.delayed(const Duration(seconds: 6), () {
+      if (mounted && _isLoading) {
+        print('Force proceeding after timeout');
+        setState(() {
+          _isLoading = false;
+          _currentUser = null;
+        });
+      }
+    });
   }
 
   @override

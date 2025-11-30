@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:intl/intl.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -8,9 +9,11 @@ import 'welcome_screen.dart';
 import '../models/event.dart';
 import '../models/user.dart';
 import '../models/participant_registration_info.dart';
+import '../models/meal_settings.dart';
 import '../services/firebase_event_service.dart';
 import '../services/firebase_user_service.dart';
 import '../services/firebase_notification_service.dart';
+import '../services/firebase_settings_service.dart';
 import '../widgets/event_card.dart';
 import '../widgets/category_card.dart';
 import 'edit_profile_screen.dart';
@@ -41,6 +44,7 @@ class _ParticipantDashboardState extends State<ParticipantDashboard> {
   String _selectedCategory = '';
   bool _hasPendingOrganizerRequest = false;
   bool _showPastOnly = false;
+  MealSettings? _mealSettings;
 
   @override
   void initState() {
@@ -55,6 +59,7 @@ class _ParticipantDashboardState extends State<ParticipantDashboard> {
   StreamSubscription<List<Event>>? _eventsSubscription;
   StreamSubscription<List<Event>>? _myEventsSubscription;
   StreamSubscription<QuerySnapshot>? _notificationSubscription;
+  StreamSubscription<MealSettings>? _mealSettingsSubscription;
   final Set<String> _shownNotificationIds = {}; // Track which notifications we've already shown
   bool _notificationInitialLoadComplete = false;
   SharedPreferences? _notificationPrefs;
@@ -68,6 +73,7 @@ class _ParticipantDashboardState extends State<ParticipantDashboard> {
     _eventsSubscription?.cancel();
     _myEventsSubscription?.cancel();
     _notificationSubscription?.cancel();
+    _mealSettingsSubscription?.cancel();
     super.dispose();
   }
 
@@ -176,6 +182,19 @@ class _ParticipantDashboardState extends State<ParticipantDashboard> {
         _isLoading = false;
         _hasPendingOrganizerRequest = hasPendingRequest;
       });
+      // Load meal settings initially
+      try {
+        final initialMealSettings = await FirebaseSettingsService.getMealSettings();
+        if (mounted) {
+          setState(() {
+            _mealSettings = initialMealSettings;
+          });
+        }
+      } catch (e) {
+        print('Error loading initial meal settings: $e');
+      }
+      
+      _setupMealSettingsListener();
       
       // Set up listener for new event notifications
       _setupNotificationListener(userId);
@@ -438,6 +457,20 @@ class _ParticipantDashboardState extends State<ParticipantDashboard> {
       print('Error in fallback notification listener: $e2');
       print('Stack trace: $stackTrace');
     }
+  }
+
+  void _setupMealSettingsListener() {
+    _mealSettingsSubscription?.cancel();
+    _mealSettingsSubscription = FirebaseSettingsService.mealSettingsStream().listen(
+      (settings) {
+        if (mounted) {
+          setState(() {
+            _mealSettings = settings;
+          });
+        }
+      },
+      onError: (error) => print('Error listening to meal settings: $error'),
+    );
   }
 
   Future<void> _searchEvents(String query) async {
@@ -752,14 +785,142 @@ class _ParticipantDashboardState extends State<ParticipantDashboard> {
     }
   }
 
+  Widget _buildMealStatusBanner() {
+    final settings = _mealSettings;
+    if (settings == null) {
+      return const SizedBox.shrink();
+    }
+    
+    final isEnabled = settings.isMealEnabled;
+    final isAvailable = settings.isMealCurrentlyAvailable;
+    final closeTime = settings.closeTime;
+    final timeRemaining = settings.timeUntilClose;
+
+    Color background;
+    Color accent;
+    IconData icon;
+    String title;
+    String subtitle;
+
+    if (!isEnabled) {
+      background = Colors.red.shade50;
+      accent = Colors.red.shade400;
+      icon = Icons.no_meals;
+      title = 'Meal service is turned off';
+      subtitle = 'Meal service is disabled for today.';
+    } else if (isAvailable) {
+      background = Colors.green.shade50;
+      accent = Colors.green.shade600;
+      icon = Icons.restaurant;
+      title = 'Meal service is OPEN';
+      subtitle = closeTime == null
+          ? 'Enjoy your meal. Closing time not set.'
+          : 'Closes at ${DateFormat('h:mm a').format(closeTime)}';
+    } else {
+      background = Colors.orange.shade50;
+      accent = Colors.orange.shade700;
+      icon = Icons.restaurant_menu;
+      title = 'Meal service is CLOSED';
+      subtitle = closeTime == null
+          ? 'Meal service closed for today.'
+          : 'Closed after ${DateFormat('h:mm a').format(closeTime)}';
+    }
+
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: background,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: accent.withOpacity(0.4)),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Icon(icon, color: accent, size: 32),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  title,
+                  style: TextStyle(
+                    fontSize: 16,
+                    fontWeight: FontWeight.bold,
+                    color: accent,
+                  ),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  subtitle,
+                  style: TextStyle(
+                    color: accent.withOpacity(0.9),
+                    fontSize: 13,
+                  ),
+                ),
+                if (isAvailable && timeRemaining != null) ...[
+                  const SizedBox(height: 4),
+                  Text(
+                    'Closes in ${_formatDuration(timeRemaining)}',
+                    style: TextStyle(
+                      color: accent,
+                      fontSize: 12,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ],
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  String _formatDuration(Duration duration) {
+    final hours = duration.inHours;
+    final minutes = duration.inMinutes.remainder(60);
+    if (hours <= 0) {
+      return '$minutes min';
+    }
+    return '$hours hr ${minutes.toString().padLeft(2, '0')} min';
+  }
 
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(
-        title: const Text('EventBridge'),
-        actions: [
+    return PopScope(
+      canPop: false,
+      onPopInvoked: (didPop) async {
+        if (didPop) return;
+        // Show confirmation dialog before exiting
+        final shouldExit = await showDialog<bool>(
+          context: context,
+          builder: (context) => AlertDialog(
+            title: const Text('Exit App?'),
+            content: const Text('Do you want to exit the app?'),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(context, false),
+                child: const Text('Cancel'),
+              ),
+              TextButton(
+                onPressed: () => Navigator.pop(context, true),
+                child: const Text('Exit'),
+              ),
+            ],
+          ),
+        );
+        if (shouldExit == true && mounted) {
+          // Exit the app
+          SystemNavigator.pop();
+        }
+      },
+      child: Scaffold(
+        appBar: AppBar(
+          title: const Text('EventBridge'),
+          actions: [
           IconButton(
             icon: const Icon(Icons.notifications_outlined),
             onPressed: () {
@@ -825,6 +986,7 @@ class _ParticipantDashboardState extends State<ParticipantDashboard> {
             label: 'Profile',
           ),
         ],
+      ),
       ),
     );
   }
@@ -914,6 +1076,11 @@ class _ParticipantDashboardState extends State<ParticipantDashboard> {
               ),
             
             const SizedBox(height: 8),
+            
+            if (_mealSettings != null) ...[
+              _buildMealStatusBanner(),
+              const SizedBox(height: 16),
+            ],
             
             // Show search results if searching
             if (hasSearchQuery) ...[

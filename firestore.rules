@@ -29,20 +29,28 @@ service cloud.firestore {
     
     // Users collection
     match /users/{userId} {
-      // Users can read their own profile
-      allow read: if isAuthenticated() && (getUserId() == userId || isOrganizer(getUserId()) || isAdmin(getUserId()));
+      // Users can read their own profile, organizers and admins can read all profiles
+      allow read: if isAuthenticated() && (
+        getUserId() == userId || 
+        isOrganizer(getUserId()) || 
+        isAdmin(getUserId())
+      );
       
       // Users can create their own profile during signup
-      allow create: if isAuthenticated() && getUserId() == userId;
+      allow create: if isAuthenticated() && 
+        getUserId() == userId &&
+        request.resource.data.keys().hasAll(['id', 'email', 'name', 'universityId', 'type']);
       
       // Users can update their own profile, admins can update any profile
-      allow update: if isAuthenticated() && (getUserId() == userId || isAdmin(getUserId()));
+      allow update: if isAuthenticated() && (
+        (getUserId() == userId && request.resource.data.id == userId) ||
+        isAdmin(getUserId())
+      );
       
       // Only admins can delete users (and cannot delete themselves)
-      allow delete: if isAuthenticated() && isAdmin(getUserId()) && getUserId() != userId;
-      
-      // Organizers and admins can read all user profiles
-      allow read: if isAuthenticated() && (isOrganizer(getUserId()) || isAdmin(getUserId()));
+      allow delete: if isAuthenticated() && 
+        isAdmin(getUserId()) && 
+        getUserId() != userId;
     }
     
     // Events collection
@@ -61,28 +69,30 @@ service cloud.firestore {
         let uid = getUserId();
         let current = resource.data.participants == null ? [] : resource.data.participants;
         let next = request.resource.data.participants == null ? [] : request.resource.data.participants;
-        let allowedNext = current.concat([uid]);
         let wasRegistered = current.hasAny([uid]);
         let willBeRegistered = next.hasAny([uid]);
         let sizeDiff = next.size() - current.size();
+        
+        // Only allow changes to participants array
+        let onlyParticipantsChanged = request.resource.data.diff(resource.data).changedKeys().hasOnly(['participants']);
+        
+        // Validate participant can only add/remove themselves
+        let onlySelfChange = (!wasRegistered && willBeRegistered && sizeDiff == 1 && next.hasAny([uid])) ||
+                            (wasRegistered && !willBeRegistered && sizeDiff == -1 && !next.hasAny([uid]));
 
         return isAuthenticated() &&
                isParticipant(uid) &&
-               request.resource.data.diff(resource.data).changedKeys().hasOnly(['participants']) &&
-               next.hasOnly(allowedNext) &&
-               current.hasOnly(next.concat([uid])) &&
-               (
-                 (!wasRegistered && willBeRegistered && sizeDiff == 1) ||
-                 (wasRegistered && !willBeRegistered && sizeDiff == -1) ||
-                 (wasRegistered && willBeRegistered && sizeDiff == 0)
-               );
+               onlyParticipantsChanged &&
+               onlySelfChange;
       }
       
       // Only organizers can create events (admins can also create)
       allow create: if isAuthenticated() && (
         (isOrganizer(getUserId()) && request.resource.data.organizerId == getUserId()) ||
         isAdmin(getUserId())
-      );
+      ) &&
+      request.resource.data.keys().hasAll(['id', 'title', 'organizerId', 'date', 'createdAt']) &&
+      (request.resource.data.participants == null || request.resource.data.participants.size() <= 10000);
       
       // Event organizer or admin can update events
       allow update: if isOrganizerOrAdminUpdatingOwnEvent() || isParticipantUpdatingRegistration();
@@ -96,14 +106,21 @@ service cloud.firestore {
     
     // Notifications collection
     match /notifications/{notificationId} {
-      // Anyone authenticated can read notifications
-      allow read: if isAuthenticated();
+      // Users can read their own notifications, organizers and admins can read all
+      allow read: if isAuthenticated() && (
+        resource.data.userId == getUserId() ||
+        isOrganizer(getUserId()) ||
+        isAdmin(getUserId())
+      );
       
       // Organizers and admins can create notifications (when creating events)
-      allow create: if isAuthenticated() && (isOrganizer(getUserId()) || isAdmin(getUserId()));
+      allow create: if isAuthenticated() && 
+        (isOrganizer(getUserId()) || isAdmin(getUserId())) &&
+        request.resource.data.keys().hasAll(['userId', 'title', 'message', 'timestamp']);
       
-      // Users can update notifications to mark them as read (only the 'read' field)
+      // Users can update their own notifications to mark them as read (only the 'read' field)
       allow update: if isAuthenticated() && 
+        resource.data.userId == getUserId() &&
         request.resource.data.diff(resource.data).affectedKeys().hasOnly(['read']) &&
         request.resource.data.read == true;
     }
@@ -125,26 +142,25 @@ service cloud.firestore {
     
     // Event Participants collection - stores participant registration info
     match /event_participants/{participantId} {
-      // Organizers and admins can read all participant info for their events
+      // Organizers and admins can read all participant info
+      // Participants can read their own registration info
       allow read: if isAuthenticated() && (
         isAdmin(getUserId()) ||
-        isOrganizer(getUserId())
+        isOrganizer(getUserId()) ||
+        (resource != null && resource.data.userId == getUserId())
       );
       
-      // Participants can read their own registration info
-      allow read: if isAuthenticated() && 
-        (!exists(/databases/$(database)/documents/event_participants/$(participantId)) || 
-         resource.data.userId == getUserId());
-      
-      // Participants can write (create/update) their own registration info
-      allow write: if isAuthenticated() && 
+      // Participants can create their own registration info
+      allow create: if isAuthenticated() && 
+        isParticipant(getUserId()) &&
         request.resource.data.userId == getUserId() &&
         request.resource.data.eventId != null &&
-        (!exists(/databases/$(database)/documents/event_participants/$(participantId)) || 
-         resource.data.userId == getUserId());
+        request.resource.data.keys().hasAll(['userId', 'eventId']);
       
-      // Organizers and admins can update participant info (for approvals/rejections)
+      // Participants can update their own registration info
+      // Organizers and admins can update any participant info (for approvals/rejections)
       allow update: if isAuthenticated() && (
+        (resource.data.userId == getUserId() && request.resource.data.userId == getUserId()) ||
         isAdmin(getUserId()) ||
         isOrganizer(getUserId())
       );
@@ -154,6 +170,15 @@ service cloud.firestore {
         isAdmin(getUserId()) ||
         isOrganizer(getUserId())
       );
+    }
+    
+    // App Settings collection - stores app-wide settings like meal service
+    match /app_settings/{settingsId} {
+      // All authenticated users can read settings (students need to see meal status)
+      allow read: if isAuthenticated();
+      
+      // Only admins can create/update/delete settings
+      allow write: if isAuthenticated() && isAdmin(getUserId());
     }
     
     // Default deny all other access

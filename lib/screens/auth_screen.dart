@@ -336,6 +336,10 @@ class _AuthScreenState extends State<AuthScreen> {
         
         String errorMessage = e.toString().replaceFirst('Exception: ', '');
         
+        // Log the full error for debugging
+        print('Login error details: $e');
+        print('Error message: $errorMessage');
+        
         // Provide user-friendly error messages
         if (errorMessage.contains('PERMISSION_DENIED') || 
             errorMessage.contains('permission-denied')) {
@@ -343,6 +347,9 @@ class _AuthScreenState extends State<AuthScreen> {
         } else if (errorMessage.contains('UNAVAILABLE') || 
                    errorMessage.contains('unavailable')) {
           errorMessage = 'Unable to connect. Please check your internet connection.';
+        } else if (errorMessage.contains('network') || 
+                   errorMessage.contains('Network')) {
+          errorMessage = 'Network error. Please check your internet connection and try again.';
         } else if (errorMessage.contains('No account found') ||
                    errorMessage.contains('user-not-found')) {
           errorMessage = 'No account found with this email. Please sign up first.';
@@ -351,6 +358,11 @@ class _AuthScreenState extends State<AuthScreen> {
           errorMessage = 'Invalid password. Please try again.';
         } else if (errorMessage.contains('Invalid email or password')) {
           errorMessage = 'Invalid email or password. Please check your credentials.';
+        } else if (errorMessage.contains('operation-not-allowed')) {
+          errorMessage = 'Email/password sign-in is not enabled. Please contact support.';
+        } else if (errorMessage.contains('Sign-in failed')) {
+          // Keep the detailed error message from Firebase
+          errorMessage = errorMessage;
         }
         
         ScaffoldMessenger.of(context).showSnackBar(

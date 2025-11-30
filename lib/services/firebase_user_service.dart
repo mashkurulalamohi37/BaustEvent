@@ -1,6 +1,8 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_auth/firebase_auth.dart' hide User show FirebaseAuthException, FirebaseAuth;
 import '../models/user.dart';
+import '../firebase_options.dart';
 
 class FirebaseUserService {
   static final FirebaseFirestore _firestore = FirebaseFirestore.instance;
@@ -52,15 +54,40 @@ class FirebaseUserService {
 
   // Get current user with details from Firestore
   static Future<User?> getCurrentUserWithDetails() async {
-    final firebaseUser = _auth.currentUser;
-    if (firebaseUser == null) return null;
-    
-    return await getUserById(firebaseUser.uid);
+    try {
+      // Check if Firebase is initialized
+      if (Firebase.apps.isEmpty) {
+        print('Firebase not initialized, attempting to initialize...');
+        await Firebase.initializeApp();
+      }
+      
+      final firebaseUser = _auth.currentUser;
+      if (firebaseUser == null) return null;
+      
+      return await getUserById(firebaseUser.uid);
+    } catch (e) {
+      print('Error in getCurrentUserWithDetails: $e');
+      // If Firebase is not initialized, return null
+      if (e.toString().contains('No Firebase App') || 
+          e.toString().contains('no-app')) {
+        print('Firebase not initialized. Please restart the app.');
+        return null;
+      }
+      rethrow;
+    }
   }
 
   // Get user by ID from Firestore
   static Future<User?> getUserById(String userId) async {
     try {
+      // Ensure Firebase is initialized
+      if (Firebase.apps.isEmpty) {
+        print('Firebase not initialized in getUserById, initializing now...');
+        await Firebase.initializeApp(
+          options: DefaultFirebaseOptions.currentPlatform,
+        );
+      }
+      
       final doc = await _usersCol.doc(userId).get();
       if (doc.exists) {
         final data = doc.data()!;
@@ -86,6 +113,15 @@ class FirebaseUserService {
   // Handles migration of old Firestore-only accounts to Firebase Auth
   static Future<User?> signInWithEmailAndPassword(String email, String password) async {
     try {
+      // Ensure Firebase is initialized before attempting sign-in
+      if (Firebase.apps.isEmpty) {
+        print('Firebase not initialized during sign-in, initializing now...');
+        await Firebase.initializeApp(
+          options: DefaultFirebaseOptions.currentPlatform,
+        );
+        print('Firebase initialized during sign-in');
+      }
+      
       // Authenticate with Firebase Auth (validates password)
       final credential = await _auth.signInWithEmailAndPassword(
         email: email.trim().toLowerCase(),
@@ -122,8 +158,9 @@ class FirebaseUserService {
       return null;
     } on FirebaseAuthException catch (e) {
       print('Firebase Auth error: ${e.code} - ${e.message}');
+      print('Full error details: $e');
       
-      // Handle authentication errors
+      // Handle authentication errors with more specific messages
       if (e.code == 'user-not-found') {
         throw Exception('No account found with this email. Please sign up first.');
       } else if (e.code == 'wrong-password') {
@@ -134,8 +171,13 @@ class FirebaseUserService {
         throw Exception('This account has been disabled.');
       } else if (e.code == 'too-many-requests') {
         throw Exception('Too many failed attempts. Please try again later.');
+      } else if (e.code == 'network-request-failed') {
+        throw Exception('Network error. Please check your internet connection and try again.');
+      } else if (e.code == 'operation-not-allowed') {
+        throw Exception('Email/password sign-in is not enabled. Please contact support.');
       } else {
-        throw Exception('Invalid email or password. Please check your credentials.');
+        // Show the actual error code for debugging
+        throw Exception('Sign-in failed: ${e.code}. ${e.message ?? "Please try again."}');
       }
     } catch (e) {
       // Re-throw migration exception as-is
@@ -143,7 +185,35 @@ class FirebaseUserService {
         rethrow;
       }
       print('Error signing in: $e');
-      throw Exception('Error signing in. Please try again.');
+      print('Error type: ${e.runtimeType}');
+      // Provide more detailed error message
+      final errorString = e.toString();
+      
+      // Check for Firebase initialization errors
+      if (errorString.contains('No Firebase App') || 
+          errorString.contains('no-app') ||
+          errorString.contains('Firebase.initializeApp')) {
+        // Try to initialize Firebase
+        try {
+          if (Firebase.apps.isEmpty) {
+            print('Attempting to initialize Firebase after error...');
+            await Firebase.initializeApp();
+            print('Firebase initialized successfully');
+            throw Exception('Firebase was not initialized. Please try signing in again.');
+          }
+        } catch (initError) {
+          print('Failed to initialize Firebase: $initError');
+          throw Exception('Firebase initialization failed. Please restart the app and try again.');
+        }
+      }
+      
+      if (errorString.contains('network') || errorString.contains('Network')) {
+        throw Exception('Network error. Please check your internet connection.');
+      } else if (errorString.contains('permission') || errorString.contains('Permission')) {
+        throw Exception('Permission denied. Please check your Firestore security rules.');
+      } else {
+        throw Exception('Error signing in: ${e.toString().replaceFirst('Exception: ', '')}');
+      }
     }
   }
 
@@ -191,6 +261,15 @@ class FirebaseUserService {
     required UserType type,
   }) async {
     try {
+      // Ensure Firebase is initialized before attempting sign-up
+      if (Firebase.apps.isEmpty) {
+        print('Firebase not initialized during sign-up, initializing now...');
+        await Firebase.initializeApp(
+          options: DefaultFirebaseOptions.currentPlatform,
+        );
+        print('Firebase initialized during sign-up');
+      }
+      
       print('Attempting to create user with email: $email');
       
       // Create user in Firebase Authentication

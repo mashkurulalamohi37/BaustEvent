@@ -17,7 +17,7 @@ if (keystorePropertiesFile.exists()) {
 }
 
 android {
-    namespace = "com.example.baust_event"
+    namespace = "com.baust.eventmanager"
     compileSdk = flutter.compileSdkVersion
     ndkVersion = "27.0.12077973"
 
@@ -31,31 +31,59 @@ android {
         jvmTarget = JavaVersion.VERSION_11.toString()
     }
 
+    buildFeatures {
+        buildConfig = true
+    }
+
     defaultConfig {
-        // TODO: Specify your own unique Application ID (https://developer.android.com/studio/build/application-id.html).
-        applicationId = "com.example.baust_event"
-        // You can update the following values to match your application needs.
-        // For more information, see: https://flutter.dev/to/review-gradle-config.
-        minSdk = 23  // Required by Firebase Auth 23.2.1
+        // Application ID - Change this to your own unique package name
+        // Format: com.yourcompany.appname (e.g., com.baust.eventmanager)
+        applicationId = "com.baust.eventmanager"
+        minSdk = 23  // Required by Firebase Auth
         targetSdk = flutter.targetSdkVersion
         versionCode = flutter.versionCode
         versionName = flutter.versionName
+        
+        // Multi-dex support for large apps
+        multiDexEnabled = true
     }
 
     signingConfigs {
         create("release") {
             if (keystorePropertiesFile.exists()) {
-                keyAlias = keystoreProperties["keyAlias"] as String
-                keyPassword = keystoreProperties["keyPassword"] as String
-                storeFile = file(keystoreProperties["storeFile"] as String)
-                storePassword = keystoreProperties["storePassword"] as String
+                val storeFileStr = keystoreProperties["storeFile"] as String?
+                if (storeFileStr != null) {
+                    val storeFileObj = file(storeFileStr)
+                    if (storeFileObj.exists()) {
+                        keyAlias = keystoreProperties["keyAlias"] as String
+                        keyPassword = keystoreProperties["keyPassword"] as String
+                        storeFile = storeFileObj
+                        storePassword = keystoreProperties["storePassword"] as String
+                    }
+                }
             }
         }
     }
 
     buildTypes {
         release {
-            signingConfig = signingConfigs.getByName("release")
+            // Only use signing config if keystore file exists
+            val releaseSigningConfig = signingConfigs.getByName("release")
+            if (releaseSigningConfig.storeFile?.exists() == true) {
+                signingConfig = releaseSigningConfig
+            }
+            // Enable code shrinking, obfuscation, and optimization
+            isMinifyEnabled = true
+            isShrinkResources = true
+            proguardFiles(
+                getDefaultProguardFile("proguard-android-optimize.txt"),
+                "proguard-rules.pro"
+            )
+            // Remove debug logging in release builds
+            buildConfigField("boolean", "DEBUG", "false")
+        }
+        debug {
+            // Keep debug builds fast
             isMinifyEnabled = false
             isShrinkResources = false
         }
@@ -68,4 +96,6 @@ flutter {
 
 dependencies {
     coreLibraryDesugaring("com.android.tools:desugar_jdk_libs:2.0.4")
+    // Multi-dex support
+    implementation("androidx.multidex:multidex:2.0.1")
 }

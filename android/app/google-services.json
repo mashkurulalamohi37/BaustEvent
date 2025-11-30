@@ -7,6 +7,42 @@
   "client": [
     {
       "client_info": {
+        "mobilesdk_app_id": "1:1055851081626:android:8e80a24580b6fe7ac21423",
+        "android_client_info": {
+          "package_name": "com.baust.eventmanager"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "1055851081626-sc0e1s55v3n1b6v1d3cdbl87h67en56p.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyCe7Rok4FnqB7S5hlotfxEao5JlfO_IL-E"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "1055851081626-sc0e1s55v3n1b6v1d3cdbl87h67en56p.apps.googleusercontent.com",
+              "client_type": 3
+            },
+            {
+              "client_id": "1055851081626-k2nc5n2t52f6mlsue03mpd09t2bm8cs5.apps.googleusercontent.com",
+              "client_type": 2,
+              "ios_info": {
+                "bundle_id": "com.example.walkieTalkie"
+              }
+            }
+          ]
+        }
+      }
+    },
+    {
+      "client_info": {
         "mobilesdk_app_id": "1:1055851081626:android:780095eb112a15ffc21423",
         "android_client_info": {
           "package_name": "com.example.baust_event"
@@ -44,3 +80,4 @@
   ],
   "configuration_version": "1"
 }
+
