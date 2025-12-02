@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import '../models/event.dart';
 import '../models/participant_registration_info.dart';
 
@@ -32,9 +33,11 @@ class _ParticipantRegistrationFormScreenState
   String? _gender;
   final TextEditingController _personalNumberController = TextEditingController();
   final TextEditingController _guardianNumberController = TextEditingController();
+  final TextEditingController _batchController = TextEditingController();
 
   final List<String> _levels = ['1', '2', '3', '4'];
   final List<String> _terms = ['1', '2'];
+  final List<String> _batches = ['15', '16', '17', '18', '19', '20', '21', '22'];
   final List<String> _sections = ['A', 'B', 'C', 'D', 'E'];
   final List<String> _tshirtSizes = ['XS', 'S', 'M', 'L', 'XL', 'XXL'];
   final List<String> _foodPreferences = ['Mutton', 'Beef'];
@@ -51,6 +54,7 @@ class _ParticipantRegistrationFormScreenState
           ? widget.existingInfo!.term 
           : null;
       _batch = widget.existingInfo!.batch;
+      _batchController.text = widget.existingInfo!.batch ?? '';
       _section = widget.existingInfo!.section;
       _tshirtSize = widget.existingInfo!.tshirtSize;
       _foodPreference = widget.existingInfo!.foodPreference;
@@ -65,6 +69,7 @@ class _ParticipantRegistrationFormScreenState
   void dispose() {
     _personalNumberController.dispose();
     _guardianNumberController.dispose();
+    _batchController.dispose();
     super.dispose();
   }
 
@@ -157,21 +162,66 @@ class _ParticipantRegistrationFormScreenState
               ],
 
               if (event.requireBatch) ...[
-                TextFormField(
-                  initialValue: _batch,
+                DropdownButtonFormField<String>(
+                  value: _batch,
                   decoration: InputDecoration(
                     labelText: 'Batch *',
-                    hintText: 'e.g., 2024',
+                    hintText: 'Select batch (15-22)',
                     prefixIcon: const Icon(Icons.groups),
                     border: OutlineInputBorder(
                       borderRadius: BorderRadius.circular(12),
                     ),
                   ),
-                  onChanged: (value) => setState(() => _batch = value),
+                  items: _batches.map((batch) {
+                    return DropdownMenuItem(
+                      value: batch,
+                      child: Text('Batch $batch'),
+                    );
+                  }).toList(),
+                  onChanged: (value) {
+                    setState(() {
+                      _batch = value;
+                      if (value != null) {
+                        _batchController.text = value;
+                      }
+                    });
+                  },
                   validator: (value) {
-                    if (event.requireBatch &&
-                        (value == null || value.trim().isEmpty)) {
-                      return 'Please enter your batch';
+                    if (event.requireBatch && (value == null || value.isEmpty)) {
+                      return 'Please select your batch';
+                    }
+                    return null;
+                  },
+                ),
+                const SizedBox(height: 8),
+                TextFormField(
+                  controller: _batchController,
+                  decoration: InputDecoration(
+                    labelText: 'Or enter batch manually (two digits)',
+                    hintText: 'e.g., 17',
+                    prefixIcon: const Icon(Icons.edit),
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                  ),
+                  keyboardType: TextInputType.number,
+                  inputFormatters: [
+                    FilteringTextInputFormatter.digitsOnly,
+                    LengthLimitingTextInputFormatter(2),
+                  ],
+                  onChanged: (value) {
+                    if (value.length == 2 && RegExp(r'^\d{2}$').hasMatch(value)) {
+                      setState(() => _batch = value);
+                    } else if (value.isEmpty) {
+                      setState(() => _batch = null);
+                    }
+                  },
+                  validator: (value) {
+                    if (event.requireBatch && (_batch == null || _batch!.isEmpty)) {
+                      return 'Please select or enter your batch';
+                    }
+                    if (_batch != null && _batch!.isNotEmpty && (_batch!.length != 2 || !RegExp(r'^\d{2}$').hasMatch(_batch!))) {
+                      return 'Batch must be a two-digit number';
                     }
                     return null;
                   },
