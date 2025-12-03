@@ -57,31 +57,45 @@ class _ManageParticipantsScreenState extends State<ManageParticipantsScreen> {
     setState(() => _isLoading = true);
     
     try {
-      final participantIds = widget.event.participants;
+      // Fetch the latest event data to get the most up-to-date participant list
+      final eventDoc = await FirebaseFirestore.instance
+          .collection('events')
+          .doc(widget.event.id)
+          .get();
       
-      // Optimize: Only load participant users, not all users
-      // For large events (1000+), use batch loading
-      final List<User> participants;
-      if (participantIds.length > 1000) {
-        // Load users in batches for large events (Firestore whereIn limit is 10)
-        participants = await FirebaseUserService.getUsersByIds(participantIds);
-      } else {
-        // For smaller events, check if loading all users is faster
-        final allUsers = await FirebaseUserService.getAllUsers();
-        participants = allUsers.where((user) => participantIds.contains(user.id)).toList();
+      if (!eventDoc.exists) {
+        setState(() => _isLoading = false);
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Event not found'),
+            backgroundColor: Colors.red,
+          ),
+        );
+        return;
       }
       
-      // Load participant registration info
-      final participantInfoList = await FirebaseEventService.getEventParticipantInfo(
-        widget.event.id,
-      );
+      final eventData = eventDoc.data()!;
+      final participantIds = List<String>.from(eventData['participants'] ?? []);
+      
+      // Always use batch loading for better performance (especially for 500+ users)
+      // Never load all users - it's inefficient and doesn't scale
+      final List<User> participants = participantIds.isNotEmpty
+          ? await FirebaseUserService.getUsersByIds(participantIds)
+          : <User>[];
+      
+      // Load participant registration info and pending registrations in parallel
+      final results = await Future.wait([
+        FirebaseEventService.getEventParticipantInfo(widget.event.id),
+        FirebaseEventService.getPendingRegistrations(widget.event.id),
+      ]);
+      
+      final participantInfoList = results[0] as List<ParticipantRegistrationInfo>;
+      final pendingList = results[1] as List<ParticipantRegistrationInfo>;
+      
       final participantInfoMap = <String, ParticipantRegistrationInfo>{};
       for (var info in participantInfoList) {
         participantInfoMap[info.userId] = info;
       }
-      
-      // Load pending registrations (hand cash payments awaiting approval)
-      final pendingList = await FirebaseEventService.getPendingRegistrations(widget.event.id);
       
       // Load pending users efficiently using batch loading
       final pendingUserIds = pendingList.map((info) => info.userId).toList();
@@ -514,21 +528,21 @@ class _ManageParticipantsScreenState extends State<ManageParticipantsScreen> {
   }
 
   void _showParticipantProfile(User user, ParticipantRegistrationInfo? info) {
-    final themeService = ThemeService.instance ?? ThemeService();
-    final isDark = themeService.isDarkMode;
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
       backgroundColor: Colors.transparent,
-      builder: (context) => DraggableScrollableSheet(
-        initialChildSize: 0.9,
-        minChildSize: 0.5,
-        maxChildSize: 0.95,
-        builder: (context, scrollController) => Container(
-          decoration: BoxDecoration(
-            color: isDark ? const Color(0xFF1E1E1E) : Colors.white,
-            borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
-          ),
+      builder: (context) => Theme(
+        data: ThemeService.lightTheme,
+        child: DraggableScrollableSheet(
+          initialChildSize: 0.9,
+          minChildSize: 0.5,
+          maxChildSize: 0.95,
+          builder: (context, scrollController) => Container(
+            decoration: const BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+            ),
           child: Column(
             children: [
               // Handle bar
@@ -546,28 +560,28 @@ class _ManageParticipantsScreenState extends State<ManageParticipantsScreen> {
                 padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
                 child: Row(
                   children: [
-                    Text(
+                    const Text(
                       'Participant Profile',
                       style: TextStyle(
                         fontSize: 20,
                         fontWeight: FontWeight.bold,
-                        color: isDark ? Colors.white : Colors.black,
+                        color: Colors.black,
                       ),
                     ),
                     const Spacer(),
                     IconButton(
-                      icon: Icon(
+                      icon: const Icon(
                         Icons.close,
-                        color: isDark ? Colors.white : Colors.black,
+                        color: Colors.black,
                       ),
                       onPressed: () => Navigator.pop(context),
                     ),
                   ],
                 ),
               ),
-              Divider(
+              const Divider(
                 height: 1,
-                color: isDark ? Colors.grey[800] : Colors.grey[300],
+                color: Colors.grey,
               ),
               // Content
               Expanded(
@@ -578,7 +592,7 @@ class _ManageParticipantsScreenState extends State<ManageParticipantsScreen> {
                     // User Info Card
                     Container(
                       decoration: BoxDecoration(
-                        color: isDark ? Colors.grey[900] : Colors.grey.shade50,
+                        color: Colors.grey.shade50,
                         borderRadius: BorderRadius.circular(12),
                       ),
                       child: Padding(
@@ -604,10 +618,10 @@ class _ManageParticipantsScreenState extends State<ManageParticipantsScreen> {
                                 children: [
                                   Text(
                                     user.name,
-                                    style: TextStyle(
+                                    style: const TextStyle(
                                       fontSize: 18,
                                       fontWeight: FontWeight.bold,
-                                      color: isDark ? Colors.white : Colors.black,
+                                      color: Colors.black,
                                     ),
                                   ),
                                   const SizedBox(height: 4),
@@ -615,7 +629,7 @@ class _ManageParticipantsScreenState extends State<ManageParticipantsScreen> {
                                     user.email,
                                     style: TextStyle(
                                       fontSize: 14,
-                                      color: isDark ? Colors.grey[300] : Colors.grey.shade600,
+                                      color: Colors.grey.shade600,
                                     ),
                                   ),
                                   if (user.universityId.isNotEmpty) ...[
@@ -624,7 +638,7 @@ class _ManageParticipantsScreenState extends State<ManageParticipantsScreen> {
                                       'ID: ${user.universityId}',
                                       style: TextStyle(
                                         fontSize: 12,
-                                        color: isDark ? Colors.grey[300] : Colors.grey.shade600,
+                                        color: Colors.grey.shade600,
                                       ),
                                     ),
                                   ],
@@ -640,8 +654,8 @@ class _ManageParticipantsScreenState extends State<ManageParticipantsScreen> {
                     Container(
                       decoration: BoxDecoration(
                         color: widget.event.participants.contains(user.id)
-                            ? (isDark ? Colors.green.shade900.withOpacity(0.3) : Colors.green.shade50)
-                            : (isDark ? Colors.orange.shade900.withOpacity(0.3) : Colors.orange.shade50),
+                            ? Colors.green.shade50
+                            : Colors.orange.shade50,
                         borderRadius: BorderRadius.circular(12),
                       ),
                       child: Padding(
@@ -666,8 +680,8 @@ class _ManageParticipantsScreenState extends State<ManageParticipantsScreen> {
                                   fontSize: 16,
                                   fontWeight: FontWeight.w600,
                                   color: widget.event.participants.contains(user.id)
-                                      ? (isDark ? Colors.green.shade300 : Colors.green.shade700)
-                                      : (isDark ? Colors.orange.shade300 : Colors.orange.shade700),
+                                      ? Colors.green.shade700
+                                      : Colors.orange.shade700,
                                 ),
                               ),
                             ),
@@ -679,7 +693,7 @@ class _ManageParticipantsScreenState extends State<ManageParticipantsScreen> {
                     // Registration Details - Always show, even if info is null
                     Container(
                       decoration: BoxDecoration(
-                        color: isDark ? Colors.grey[900] : Colors.grey.shade50,
+                        color: Colors.grey.shade50,
                         borderRadius: BorderRadius.circular(12),
                       ),
                       child: Padding(
@@ -687,32 +701,32 @@ class _ManageParticipantsScreenState extends State<ManageParticipantsScreen> {
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            Text(
+                            const Text(
                               'Registration Details',
                               style: TextStyle(
                                 fontSize: 18,
                                 fontWeight: FontWeight.bold,
-                                color: isDark ? Colors.white : Colors.black,
+                                color: Colors.black,
                               ),
                             ),
                             const SizedBox(height: 16),
                             if (info != null) ...[
-                              _buildDetailRow(Icons.school, 'Level', info.level != null ? 'Level ${info.level!}' : 'Not specified', isDark),
-                              _buildDetailRow(Icons.calendar_view_month, 'Term', info.term != null ? 'Term ${info.term}' : 'Not specified', isDark),
-                              _buildDetailRow(Icons.groups, 'Batch', info.batch ?? 'Not specified', isDark),
-                              _buildDetailRow(Icons.class_, 'Section', info.section ?? 'Not specified', isDark),
-                              _buildDetailRow(Icons.checkroom, 'T-shirt Size', info.tshirtSize ?? 'Not specified', isDark),
-                              _buildDetailRow(Icons.restaurant, 'Food Preference', info.foodPreference ?? 'Not specified', isDark),
-                              _buildDetailRow(Icons.home, 'Hall', info.hall ?? 'Not specified', isDark),
-                              _buildDetailRow(Icons.person, 'Gender', info.gender ?? 'Not specified', isDark),
-                              _buildDetailRow(Icons.phone, 'Personal Number', info.personalNumber ?? 'Not specified', isDark),
-                              _buildDetailRow(Icons.phone_android, 'Guardian Number', info.guardianNumber ?? 'Not specified', isDark),
+                              _buildDetailRow(Icons.school, 'Level', info.level != null ? 'Level ${info.level!}' : 'Not specified', false),
+                              _buildDetailRow(Icons.calendar_view_month, 'Term', info.term != null ? 'Term ${info.term}' : 'Not specified', false),
+                              _buildDetailRow(Icons.groups, 'Batch', info.batch ?? 'Not specified', false),
+                              _buildDetailRow(Icons.class_, 'Section', info.section ?? 'Not specified', false),
+                              _buildDetailRow(Icons.checkroom, 'T-shirt Size', info.tshirtSize ?? 'Not specified', false),
+                              _buildDetailRow(Icons.restaurant, 'Food Preference', info.foodPreference ?? 'Not specified', false),
+                              _buildDetailRow(Icons.home, 'Hall', info.hall ?? 'Not specified', false),
+                              _buildDetailRow(Icons.person, 'Gender', info.gender ?? 'Not specified', false),
+                              _buildDetailRow(Icons.phone, 'Personal Number', info.personalNumber ?? 'Not specified', false),
+                              _buildDetailRow(Icons.phone_android, 'Guardian Number', info.guardianNumber ?? 'Not specified', false),
                               if (info.registeredAt != null)
                                 _buildDetailRow(
                                   Icons.access_time,
                                   'Registered At',
                                   _formatDate(info.registeredAt),
-                                  isDark,
+                                  false,
                                 ),
                               if (info.paymentMethod != null) ...[
                                 const SizedBox(height: 8),
@@ -720,27 +734,27 @@ class _ManageParticipantsScreenState extends State<ManageParticipantsScreen> {
                                   Icons.payment,
                                   'Payment Method',
                                   info.paymentMethod == 'handCash' ? 'Hand Cash' : 'bKash',
-                                  isDark,
+                                  false,
                                 ),
                                 if (info.paymentStatus != null)
                                   _buildDetailRow(
                                     Icons.info,
                                     'Payment Status',
                                     info.paymentStatus!.toUpperCase(),
-                                    isDark,
+                                    false,
                                   ),
                               ],
                             ] else ...[
-                              _buildDetailRow(Icons.school, 'Level', 'Not specified', isDark),
-                              _buildDetailRow(Icons.calendar_view_month, 'Term', 'Not specified', isDark),
-                              _buildDetailRow(Icons.groups, 'Batch', 'Not specified', isDark),
-                              _buildDetailRow(Icons.class_, 'Section', 'Not specified', isDark),
-                              _buildDetailRow(Icons.checkroom, 'T-shirt Size', 'Not specified', isDark),
-                              _buildDetailRow(Icons.restaurant, 'Food Preference', 'Not specified', isDark),
-                              _buildDetailRow(Icons.home, 'Hall', 'Not specified', isDark),
-                              _buildDetailRow(Icons.person, 'Gender', 'Not specified', isDark),
-                              _buildDetailRow(Icons.phone, 'Personal Number', 'Not specified', isDark),
-                              _buildDetailRow(Icons.phone_android, 'Guardian Number', 'Not specified', isDark),
+                              _buildDetailRow(Icons.school, 'Level', 'Not specified', false),
+                              _buildDetailRow(Icons.calendar_view_month, 'Term', 'Not specified', false),
+                              _buildDetailRow(Icons.groups, 'Batch', 'Not specified', false),
+                              _buildDetailRow(Icons.class_, 'Section', 'Not specified', false),
+                              _buildDetailRow(Icons.checkroom, 'T-shirt Size', 'Not specified', false),
+                              _buildDetailRow(Icons.restaurant, 'Food Preference', 'Not specified', false),
+                              _buildDetailRow(Icons.home, 'Hall', 'Not specified', false),
+                              _buildDetailRow(Icons.person, 'Gender', 'Not specified', false),
+                              _buildDetailRow(Icons.phone, 'Personal Number', 'Not specified', false),
+                              _buildDetailRow(Icons.phone_android, 'Guardian Number', 'Not specified', false),
                             ],
                           ],
                         ),
@@ -798,6 +812,7 @@ class _ManageParticipantsScreenState extends State<ManageParticipantsScreen> {
             ],
           ),
         ),
+        ),
       ),
     );
   }
@@ -826,15 +841,19 @@ class _ManageParticipantsScreenState extends State<ManageParticipantsScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final themeService = ThemeService.instance ?? ThemeService();
-    return ListenableBuilder(
-      listenable: themeService,
-      builder: (context, _) {
-        final isDark = themeService.isDarkMode;
-        return Scaffold(
-          appBar: AppBar(
-            title: Text('Manage Participants (${_participants.length})'),
-            actions: [
+    return Theme(
+      data: ThemeService.lightTheme,
+      child: Scaffold(
+        backgroundColor: Colors.white,
+        appBar: AppBar(
+          backgroundColor: Colors.white,
+          foregroundColor: Colors.black87,
+          elevation: 1,
+          title: Text(
+            'Manage Participants (${_participants.length})',
+            style: const TextStyle(color: Colors.black87),
+          ),
+          actions: [
               IconButton(
                 icon: const Icon(Icons.refresh),
                 onPressed: _loadParticipants,
@@ -857,7 +876,7 @@ class _ManageParticipantsScreenState extends State<ManageParticipantsScreen> {
                     Container(
                       margin: const EdgeInsets.all(16),
                       decoration: BoxDecoration(
-                        color: isDark ? const Color(0xFF1E1E1E) : Colors.white,
+                        color: Colors.white,
                         borderRadius: BorderRadius.circular(12),
                         boxShadow: [
                           BoxShadow(
@@ -868,38 +887,38 @@ class _ManageParticipantsScreenState extends State<ManageParticipantsScreen> {
                         ],
                       ),
                       child: Padding(
-                        padding: const EdgeInsets.all(16),
+                        padding: const EdgeInsets.all(12),
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
                             Text(
                               widget.event.title,
-                              style: TextStyle(
-                                fontSize: 18,
+                              style: const TextStyle(
+                                fontSize: 16,
                                 fontWeight: FontWeight.bold,
-                                color: isDark ? Colors.white : Colors.black,
+                                color: Colors.black,
                               ),
                             ),
-                            const SizedBox(height: 8),
+                            const SizedBox(height: 6),
                             Row(
                               mainAxisAlignment: MainAxisAlignment.spaceBetween,
                               children: [
                             Text(
                               'Total Participants: ${_participants.length}/${widget.event.maxParticipants}',
-                              style: TextStyle(
-                                fontSize: 16,
+                              style: const TextStyle(
+                                fontSize: 14,
                                 fontWeight: FontWeight.w600,
-                                color: isDark ? Colors.white : Colors.black,
+                                color: Colors.black,
                               ),
                                 ),
                                 if (_pendingRegistrations.isNotEmpty)
                                   Container(
-                                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
                                     decoration: BoxDecoration(
-                                      color: isDark ? Colors.orange.shade900.withOpacity(0.3) : Colors.orange.shade100,
-                                      borderRadius: BorderRadius.circular(16),
+                                      color: Colors.orange.shade100,
+                                      borderRadius: BorderRadius.circular(12),
                                       border: Border.all(
-                                        color: isDark ? Colors.orange.shade700 : Colors.orange.shade300,
+                                        color: Colors.orange.shade300,
                                       ),
                                     ),
                                     child: Row(
@@ -907,16 +926,16 @@ class _ManageParticipantsScreenState extends State<ManageParticipantsScreen> {
                                       children: [
                                         Icon(
                                           Icons.pending_actions,
-                                          size: 16,
-                                          color: isDark ? Colors.orange.shade300 : Colors.orange.shade700,
+                                          size: 14,
+                                          color: Colors.orange.shade700,
                                         ),
-                                        const SizedBox(width: 6),
+                                        const SizedBox(width: 4),
                                         Text(
                                           '${_pendingRegistrations.length} Pending',
                                           style: TextStyle(
-                                            fontSize: 14,
+                                            fontSize: 12,
                                             fontWeight: FontWeight.w600,
-                                            color: isDark ? Colors.orange.shade300 : Colors.orange.shade900,
+                                            color: Colors.orange.shade900,
                                           ),
                                         ),
                                       ],
@@ -924,10 +943,10 @@ class _ManageParticipantsScreenState extends State<ManageParticipantsScreen> {
                                   ),
                               ],
                             ),
-                            const SizedBox(height: 8),
+                            const SizedBox(height: 6),
                             LinearProgressIndicator(
                               value: _participants.length / widget.event.maxParticipants,
-                              backgroundColor: isDark ? Colors.grey[800] : Colors.grey[300],
+                              backgroundColor: Colors.grey[300],
                               valueColor: AlwaysStoppedAnimation<Color>(
                                 _participants.length >= widget.event.maxParticipants
                                     ? Colors.red
@@ -944,10 +963,10 @@ class _ManageParticipantsScreenState extends State<ManageParticipantsScreen> {
                     Container(
                       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
                       decoration: BoxDecoration(
-                        color: isDark ? const Color(0xFF1E1E1E) : Colors.grey.shade50,
+                        color: Colors.grey.shade50,
                         border: Border(
                           bottom: BorderSide(
-                            color: isDark ? Colors.grey[800]! : Colors.grey.shade200,
+                            color: Colors.grey.shade200,
                           ),
                         ),
                       ),
@@ -957,18 +976,18 @@ class _ManageParticipantsScreenState extends State<ManageParticipantsScreen> {
                         children: [
                           Row(
                             children: [
-                              Icon(
+                              const Icon(
                                 Icons.filter_list,
                                 size: 20,
-                                color: isDark ? Colors.white : Colors.black,
+                                color: Colors.black,
                               ),
                               const SizedBox(width: 8),
-                              Text(
+                              const Text(
                                 'Filters',
                                 style: TextStyle(
                                   fontSize: 16,
                                   fontWeight: FontWeight.bold,
-                                  color: isDark ? Colors.white : Colors.black,
+                                  color: Colors.black,
                                 ),
                               ),
                               const Spacer(),
@@ -1205,10 +1224,10 @@ class _ManageParticipantsScreenState extends State<ManageParticipantsScreen> {
                   Container(
                     padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
                     decoration: BoxDecoration(
-                      color: isDark ? const Color(0xFF1E1E1E) : Colors.grey.shade100,
+                      color: Colors.grey.shade100,
                       border: Border(
                         bottom: BorderSide(
-                          color: isDark ? Colors.grey[800]! : Colors.grey.shade200,
+                          color: Colors.grey.shade200,
                         ),
                       ),
                     ),
@@ -1223,12 +1242,12 @@ class _ManageParticipantsScreenState extends State<ManageParticipantsScreen> {
                           },
                           icon: Icon(
                             _showFilters ? Icons.filter_list_off : Icons.filter_list,
-                            color: isDark ? Colors.white : Colors.blue,
+                            color: Colors.blue,
                           ),
                           label: Text(
                             _showFilters ? 'Hide Filters' : 'Show Filters',
-                            style: TextStyle(
-                              color: isDark ? Colors.white : Colors.blue,
+                            style: const TextStyle(
+                              color: Colors.blue,
                             ),
                           ),
                           style: TextButton.styleFrom(
@@ -1296,14 +1315,14 @@ class _ManageParticipantsScreenState extends State<ManageParticipantsScreen> {
                               Icon(
                                 Icons.people_outline,
                                 size: 64,
-                                color: isDark ? Colors.grey[400] : Colors.grey,
+                                color: Colors.grey,
                               ),
                               const SizedBox(height: 16),
                               Text(
                                 'No participants yet',
                                 style: TextStyle(
                                   fontSize: 18,
-                                  color: isDark ? Colors.grey[300] : Colors.grey,
+                                  color: Colors.grey,
                                 ),
                               ),
                               const SizedBox(height: 8),
@@ -1311,14 +1330,14 @@ class _ManageParticipantsScreenState extends State<ManageParticipantsScreen> {
                                 'Scan QR codes to register participants',
                                 style: TextStyle(
                                   fontSize: 14,
-                                  color: isDark ? Colors.grey[400] : Colors.grey,
+                                  color: Colors.grey,
                                 ),
                               ),
                             ],
                           ),
                         )
-                      : _buildGroupedParticipantsList(isDark),
-                        _buildPendingApprovalsList(isDark),
+                      : _buildGroupedParticipantsList(false),
+                        _buildPendingApprovalsList(false),
                       ],
                     ),
                 ),
@@ -1330,12 +1349,12 @@ class _ManageParticipantsScreenState extends State<ManageParticipantsScreen> {
             child: const Icon(Icons.qr_code_scanner),
             tooltip: 'Scan QR Code',
           ),
-        );
-      },
+        ),
     );
   }
 
   Widget _buildGroupedParticipantsList(bool isDark) {
+    // Force light mode - isDark parameter ignored
     final grouped = _groupByBatchAndSection();
     final batchKeys = grouped.keys.toList()..sort();
     
@@ -1351,6 +1370,7 @@ class _ManageParticipantsScreenState extends State<ManageParticipantsScreen> {
     }
     
     return ListView.builder(
+      cacheExtent: 500, // Cache more items for smoother scrolling
       itemCount: batchKeys.length,
       itemBuilder: (context, batchIndex) {
         final batch = batchKeys[batchIndex];
@@ -1368,17 +1388,17 @@ class _ManageParticipantsScreenState extends State<ManageParticipantsScreen> {
             // Batch Header
             Container(
               width: double.infinity,
-              padding: const EdgeInsets.all(16),
-              margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+              margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
               decoration: BoxDecoration(
                 color: batch == 'Not Specified'
-                    ? (isDark ? Colors.grey[900] : Colors.grey.shade100)
-                    : (isDark ? Colors.blue.shade900.withOpacity(0.3) : Colors.blue.shade50),
-                borderRadius: BorderRadius.circular(12),
+                    ? Colors.grey.shade100
+                    : Colors.blue.shade50,
+                borderRadius: BorderRadius.circular(10),
                 border: Border.all(
                   color: batch == 'Not Specified'
-                      ? (isDark ? Colors.grey[700]! : Colors.grey.shade300)
-                      : (isDark ? Colors.blue.shade700 : Colors.blue.shade200),
+                      ? Colors.grey.shade300
+                      : Colors.blue.shade200,
                 ),
               ),
               child: Row(
@@ -1387,27 +1407,27 @@ class _ManageParticipantsScreenState extends State<ManageParticipantsScreen> {
                   Text(
                     batch == 'Not Specified' ? 'Batch: Not Specified' : 'Batch: $batch',
                     style: TextStyle(
-                      fontSize: 18,
+                      fontSize: 15,
                       fontWeight: FontWeight.bold,
                       color: batch == 'Not Specified'
-                          ? (isDark ? Colors.grey[300] : Colors.grey.shade700)
-                          : (isDark ? Colors.blue.shade300 : Colors.blue.shade900),
+                          ? Colors.grey.shade700
+                          : Colors.blue.shade900,
                     ),
                   ),
                   Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
                     decoration: BoxDecoration(
                       color: batch == 'Not Specified'
-                          ? (isDark ? Colors.grey[700] : Colors.grey.shade600)
+                          ? Colors.grey.shade600
                           : Colors.blue.shade700,
-                      borderRadius: BorderRadius.circular(20),
+                      borderRadius: BorderRadius.circular(16),
                     ),
                     child: Text(
                       '$batchTotal',
                       style: const TextStyle(
                         color: Colors.white,
                         fontWeight: FontWeight.bold,
-                        fontSize: 16,
+                        fontSize: 13,
                       ),
                     ),
                   ),
@@ -1425,30 +1445,30 @@ class _ManageParticipantsScreenState extends State<ManageParticipantsScreen> {
                 children: [
                   // Section Header
                   Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 8),
+                    padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 6),
                     child: Row(
                       mainAxisAlignment: MainAxisAlignment.spaceBetween,
                       children: [
                         Text(
                           section == 'Not Specified' ? 'Section: Not Specified' : 'Section $section',
-                          style: TextStyle(
-                            fontSize: 16,
+                          style: const TextStyle(
+                            fontSize: 14,
                             fontWeight: FontWeight.w600,
-                            color: isDark ? Colors.grey[300] : Colors.grey,
+                            color: Colors.grey,
                           ),
                         ),
                         Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
                           decoration: BoxDecoration(
-                            color: isDark ? Colors.grey[700] : Colors.grey.shade300,
-                            borderRadius: BorderRadius.circular(12),
+                            color: Colors.grey.shade300,
+                            borderRadius: BorderRadius.circular(10),
                           ),
                           child: Text(
                             '$sectionCount',
-                            style: TextStyle(
+                            style: const TextStyle(
                               fontWeight: FontWeight.bold,
-                              fontSize: 14,
-                              color: isDark ? Colors.white : Colors.black,
+                              fontSize: 12,
+                              color: Colors.black,
                             ),
                           ),
                         ),
@@ -1462,7 +1482,7 @@ class _ManageParticipantsScreenState extends State<ManageParticipantsScreen> {
               );
             }),
             
-            const SizedBox(height: 16),
+            const SizedBox(height: 12),
           ],
         );
       },
@@ -1486,15 +1506,15 @@ class _ManageParticipantsScreenState extends State<ManageParticipantsScreen> {
     final isExpanded = _expandedParticipants.contains(participant.id);
     
     return Container(
-      margin: const EdgeInsets.symmetric(horizontal: 48, vertical: 4),
+      margin: const EdgeInsets.symmetric(horizontal: 36, vertical: 3),
       decoration: BoxDecoration(
-        color: isDark ? const Color(0xFF1E1E1E) : Colors.white,
-        borderRadius: BorderRadius.circular(12),
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(10),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withOpacity(0.1),
-            blurRadius: 4,
-            offset: const Offset(0, 2),
+            color: Colors.black.withOpacity(0.08),
+            blurRadius: 3,
+            offset: const Offset(0, 1),
           ),
         ],
       ),
@@ -1502,7 +1522,7 @@ class _ManageParticipantsScreenState extends State<ManageParticipantsScreen> {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Padding(
-        padding: const EdgeInsets.all(12),
+        padding: const EdgeInsets.all(10),
             child: Row(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
@@ -1529,13 +1549,14 @@ class _ManageParticipantsScreenState extends State<ManageParticipantsScreen> {
                             child: Row(
               children: [
                 CircleAvatar(
+                  radius: 20,
                   backgroundColor: const Color(0xFF1976D2),
                   child: Text(
                     participant.name[0].toUpperCase(),
-                    style: const TextStyle(color: Colors.white),
+                    style: const TextStyle(color: Colors.white, fontSize: 14),
                   ),
                 ),
-                const SizedBox(width: 12),
+                const SizedBox(width: 10),
                 Expanded(
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
@@ -1545,26 +1566,26 @@ class _ManageParticipantsScreenState extends State<ManageParticipantsScreen> {
                                             Expanded(
                                             child: Text(
                         participant.name,
-                        style: TextStyle(
-                          fontSize: 16,
+                        style: const TextStyle(
+                          fontSize: 15,
                           fontWeight: FontWeight.bold,
-                          color: isDark ? Colors.white : Colors.black,
+                          color: Colors.black,
                         ),
                                             ),
                                           ),
                                           if (hasInfo)
                                             Icon(
                                               isExpanded ? Icons.expand_less : Icons.expand_more,
-                                              color: isDark ? Colors.grey[300] : Colors.grey.shade600,
-                                              size: 20,
+                                              color: Colors.grey.shade600,
+                                              size: 18,
                                             ),
                                         ],
                       ),
                       Text(
                         participant.email,
                         style: TextStyle(
-                          fontSize: 14,
-                          color: isDark ? Colors.grey[300] : Colors.grey.shade600,
+                          fontSize: 12,
+                          color: Colors.grey.shade600,
                                         ),
                                       ),
                                     ],
@@ -1579,14 +1600,16 @@ class _ManageParticipantsScreenState extends State<ManageParticipantsScreen> {
                   ),
                 ),
                 PopupMenuButton(
-                  icon: Icon(
+                  color: Colors.white,
+                  icon: const Icon(
                     Icons.more_vert,
-                    color: isDark ? Colors.white : Colors.black,
+                    size: 20,
+                    color: Colors.black,
                   ),
                   itemBuilder: (context) => [
-                    PopupMenuItem(
+                    const PopupMenuItem(
                       value: 'remove',
-                      child: const Row(
+                      child: Row(
                         children: [
                           Icon(Icons.remove_circle, color: Colors.red),
                           SizedBox(width: 8),
@@ -1606,39 +1629,39 @@ class _ManageParticipantsScreenState extends State<ManageParticipantsScreen> {
           ),
           // Expanded details section - shown when name is tapped
           if (isExpanded && info != null) ...[
-              Divider(
+              const Divider(
                 height: 1,
-                color: isDark ? Colors.grey[800] : Colors.grey[300],
+                color: Colors.grey,
               ),
             Padding(
-              padding: const EdgeInsets.all(12),
+              padding: const EdgeInsets.all(10),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  _buildDetailSection('Registration Details', isDark, [
-                    _buildDetailRow(Icons.school, 'Level', info.level != null ? 'Level ${info.level!}' : 'Not specified', isDark),
+                  _buildDetailSection('Registration Details', false, [
+                    _buildDetailRow(Icons.school, 'Level', info.level != null ? 'Level ${info.level!}' : 'Not specified', false),
                     if (info.term != null)
-                      _buildDetailRow(Icons.calendar_view_month, 'Term', 'Term ${info.term!}', isDark),
+                      _buildDetailRow(Icons.calendar_view_month, 'Term', 'Term ${info.term!}', false),
                     if (info.batch != null)
-                      _buildDetailRow(Icons.groups, 'Batch', info.batch!, isDark),
+                      _buildDetailRow(Icons.groups, 'Batch', info.batch!, false),
                     if (info.section != null)
-                      _buildDetailRow(Icons.class_, 'Section', 'Section ${info.section!}', isDark),
+                      _buildDetailRow(Icons.class_, 'Section', 'Section ${info.section!}', false),
                     if (info.tshirtSize != null)
-                      _buildDetailRow(Icons.checkroom, 'T-shirt Size', info.tshirtSize!, isDark),
+                      _buildDetailRow(Icons.checkroom, 'T-shirt Size', info.tshirtSize!, false),
                     if (info.foodPreference != null)
-                      _buildDetailRow(Icons.restaurant, 'Food Preference', info.foodPreference!, isDark),
-                    _buildDetailRow(Icons.home, 'Hall', info.hall ?? 'Not specified', isDark),
-                    _buildDetailRow(Icons.person, 'Gender', info.gender ?? 'Not specified', isDark),
-                    _buildDetailRow(Icons.phone, 'Personal Number', info.personalNumber ?? 'Not specified', isDark),
-                    _buildDetailRow(Icons.phone_android, 'Guardian Number', info.guardianNumber ?? 'Not specified', isDark),
+                      _buildDetailRow(Icons.restaurant, 'Food Preference', info.foodPreference!, false),
+                    _buildDetailRow(Icons.home, 'Hall', info.hall ?? 'Not specified', false),
+                    _buildDetailRow(Icons.person, 'Gender', info.gender ?? 'Not specified', false),
+                    _buildDetailRow(Icons.phone, 'Personal Number', info.personalNumber ?? 'Not specified', false),
+                    _buildDetailRow(Icons.phone_android, 'Guardian Number', info.guardianNumber ?? 'Not specified', false),
                   ]),
                   if (info.registeredAt != null) ...[
-                    const SizedBox(height: 12),
+                    const SizedBox(height: 8),
                     _buildDetailRow(
                       Icons.access_time,
                       'Registered At',
                       _formatDate(info.registeredAt),
-                      isDark,
+                      false,
                     ),
                   ],
                 ],
@@ -1660,12 +1683,12 @@ class _ManageParticipantsScreenState extends State<ManageParticipantsScreen> {
         Text(
           title,
           style: TextStyle(
-            fontSize: 14,
+            fontSize: 13,
             fontWeight: FontWeight.bold,
-            color: isDark ? Colors.grey[300] : Colors.grey.shade700,
+            color: Colors.grey.shade700,
           ),
         ),
-        const SizedBox(height: 8),
+        const SizedBox(height: 6),
         ...details,
       ],
     );
@@ -1673,33 +1696,33 @@ class _ManageParticipantsScreenState extends State<ManageParticipantsScreen> {
 
   Widget _buildDetailRow(IconData icon, String label, String value, bool isDark) {
     return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 6),
+      padding: const EdgeInsets.symmetric(vertical: 4),
       child: Row(
         children: [
           Icon(
             icon,
-            size: 18,
-            color: isDark ? Colors.grey[400] : Colors.grey.shade600,
+            size: 16,
+            color: Colors.grey.shade600,
           ),
-          const SizedBox(width: 12),
+          const SizedBox(width: 8),
           SizedBox(
-            width: 120,
+            width: 110,
             child: Text(
               label,
               style: TextStyle(
-                fontSize: 14,
+                fontSize: 12,
                 fontWeight: FontWeight.w500,
-                color: isDark ? Colors.grey[300] : Colors.grey.shade700,
+                color: Colors.grey.shade700,
               ),
             ),
           ),
           Expanded(
             child: Text(
               value,
-              style: TextStyle(
-                fontSize: 14,
+              style: const TextStyle(
+                fontSize: 12,
                 fontWeight: FontWeight.w600,
-                color: isDark ? Colors.white : Colors.black,
+                color: Colors.black,
               ),
             ),
           ),
@@ -1738,14 +1761,14 @@ class _ManageParticipantsScreenState extends State<ManageParticipantsScreen> {
             Icon(
               Icons.check_circle_outline,
               size: 64,
-              color: isDark ? Colors.grey[400] : Colors.grey,
+              color: Colors.grey,
             ),
             const SizedBox(height: 16),
             Text(
               'No pending approvals',
               style: TextStyle(
                 fontSize: 18,
-                color: isDark ? Colors.grey[300] : Colors.grey,
+                color: Colors.grey,
               ),
             ),
             const SizedBox(height: 8),
@@ -1753,7 +1776,7 @@ class _ManageParticipantsScreenState extends State<ManageParticipantsScreen> {
               'All hand cash payments have been processed',
               style: TextStyle(
                 fontSize: 14,
-                color: isDark ? Colors.grey[400] : Colors.grey,
+                color: Colors.grey,
               ),
             ),
           ],
@@ -1762,6 +1785,7 @@ class _ManageParticipantsScreenState extends State<ManageParticipantsScreen> {
     }
     
     return ListView.builder(
+      cacheExtent: 500, // Cache more items for smoother scrolling
       itemCount: _pendingRegistrations.length,
       padding: const EdgeInsets.all(16),
       itemBuilder: (context, index) {
@@ -1772,7 +1796,7 @@ class _ManageParticipantsScreenState extends State<ManageParticipantsScreen> {
         return Container(
           margin: const EdgeInsets.only(bottom: 12),
           decoration: BoxDecoration(
-            color: isDark ? Colors.orange.shade900.withOpacity(0.3) : Colors.orange.shade50,
+            color: Colors.orange.shade50,
             borderRadius: BorderRadius.circular(12),
             boxShadow: [
               BoxShadow(
@@ -1803,17 +1827,17 @@ class _ManageParticipantsScreenState extends State<ManageParticipantsScreen> {
                         children: [
                           Text(
                             user.name,
-                            style: TextStyle(
+                            style: const TextStyle(
                               fontSize: 16,
                               fontWeight: FontWeight.bold,
-                              color: isDark ? Colors.white : Colors.black,
+                              color: Colors.black,
                             ),
                           ),
                           Text(
                             user.email,
                             style: TextStyle(
                               fontSize: 14,
-                              color: isDark ? Colors.grey[300] : Colors.grey.shade600,
+                              color: Colors.grey.shade600,
                             ),
                           ),
                         ],
@@ -1822,7 +1846,7 @@ class _ManageParticipantsScreenState extends State<ManageParticipantsScreen> {
                     Container(
                       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
                       decoration: BoxDecoration(
-                        color: isDark ? Colors.orange.shade800 : Colors.orange.shade200,
+                        color: Colors.orange.shade200,
                         borderRadius: BorderRadius.circular(12),
                       ),
                       child: Text(
@@ -1830,16 +1854,16 @@ class _ManageParticipantsScreenState extends State<ManageParticipantsScreen> {
                         style: TextStyle(
                           fontSize: 12,
                           fontWeight: FontWeight.bold,
-                          color: isDark ? Colors.orange.shade200 : Colors.orange.shade900,
+                          color: Colors.orange.shade900,
                         ),
                       ),
                     ),
                   ],
                 ),
                 const SizedBox(height: 12),
-                Divider(
+                const Divider(
                   height: 1,
-                  color: isDark ? Colors.grey[800] : Colors.grey[300],
+                  color: Colors.grey,
                 ),
                 const SizedBox(height: 12),
                 if (pendingInfo.level != null ||

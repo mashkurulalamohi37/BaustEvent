@@ -2,10 +2,12 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:image_picker/image_picker.dart';
+import 'package:cached_network_image/cached_network_image.dart';
 import '../models/event.dart';
 import '../services/firebase_event_service.dart';
 import '../services/firebase_storage_service.dart';
 import '../widgets/custom_text_field.dart';
+import '../services/theme_service.dart';
 
 class EditEventScreen extends StatefulWidget {
   final Event event;
@@ -23,6 +25,7 @@ class _EditEventScreenState extends State<EditEventScreen> {
   final _locationController = TextEditingController();
   final _timeController = TextEditingController();
   final _maxParticipantsController = TextEditingController();
+  final _hostNameController = TextEditingController();
   
   DateTime? _selectedDate;
   TimeOfDay? _selectedTime;
@@ -48,6 +51,7 @@ class _EditEventScreenState extends State<EditEventScreen> {
   bool _requireGender = false;
   bool _requirePersonalNumber = false;
   bool _requireGuardianNumber = false;
+  bool _allowReviews = false;
 
   final List<String> _categories = [
     'Seminars',
@@ -100,6 +104,8 @@ class _EditEventScreenState extends State<EditEventScreen> {
     _requireGender = event.requireGender;
     _requirePersonalNumber = event.requirePersonalNumber;
     _requireGuardianNumber = event.requireGuardianNumber;
+    _hostNameController.text = event.hostName ?? '';
+    _allowReviews = event.allowReviews;
   }
 
   Future<void> _pickImage() async {
@@ -357,6 +363,10 @@ class _EditEventScreenState extends State<EditEventScreen> {
         category: _selectedCategory,
         maxParticipants: int.tryParse(_maxParticipantsController.text) ?? 100,
         status: _selectedStatus,
+        hostName: _hostNameController.text.trim().isNotEmpty 
+            ? _hostNameController.text.trim() 
+            : null,
+        allowReviews: _allowReviews,
         imageUrl: imageUrl,
         registrationCloseDate: _registrationCloseDate,
         registrationCloseDateSet: true,
@@ -415,22 +425,31 @@ class _EditEventScreenState extends State<EditEventScreen> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(
-        title: const Text('Edit Event'),
-        actions: [
-          TextButton(
-            onPressed: _isLoading ? null : _updateEvent,
-            child: Text(
-              'Save',
-              style: TextStyle(
-                color: _isLoading ? Colors.grey : Colors.white,
-                fontWeight: FontWeight.w600,
+    return Theme(
+      data: ThemeService.lightTheme,
+      child: Scaffold(
+        backgroundColor: Colors.white,
+        appBar: AppBar(
+          backgroundColor: Colors.white,
+          foregroundColor: Colors.black87,
+          elevation: 1,
+          title: const Text(
+            'Edit Event',
+            style: TextStyle(color: Colors.black87),
+          ),
+          actions: [
+            TextButton(
+              onPressed: _isLoading ? null : _updateEvent,
+              child: Text(
+                'Save',
+                style: TextStyle(
+                  color: _isLoading ? Colors.grey : const Color(0xFF1976D2),
+                  fontWeight: FontWeight.w600,
+                ),
               ),
             ),
-          ),
-        ],
-      ),
+          ],
+        ),
       body: Form(
         key: _formKey,
         child: SingleChildScrollView(
@@ -470,10 +489,11 @@ class _EditEventScreenState extends State<EditEventScreen> {
                       : _currentImageUrl != null
                           ? ClipRRect(
                               borderRadius: BorderRadius.circular(12),
-                              child: Image.network(
-                                _currentImageUrl!,
+                              child: CachedNetworkImage(
+                                imageUrl: _currentImageUrl!,
                                 fit: BoxFit.cover,
-                                errorBuilder: (context, error, stackTrace) => _buildImagePlaceholder(),
+                                placeholder: (context, url) => _buildImagePlaceholder(),
+                                errorWidget: (context, url, error) => _buildImagePlaceholder(),
                               ),
                             )
                           : _buildImagePlaceholder(),
@@ -590,6 +610,15 @@ class _EditEventScreenState extends State<EditEventScreen> {
               ),
               const SizedBox(height: 16),
               
+              // Host Name (Optional)
+              CustomTextField(
+                controller: _hostNameController,
+                label: 'Host Name (Optional)',
+                icon: Icons.business,
+                hint: 'e.g., BAUST CSE Department, Student Club, etc.',
+              ),
+              const SizedBox(height: 16),
+              
               // Category Dropdown
               DropdownButtonFormField<String>(
                 value: _selectedCategory,
@@ -612,6 +641,12 @@ class _EditEventScreenState extends State<EditEventScreen> {
                 }).toList(),
                 onChanged: (value) {
                   setState(() => _selectedCategory = value!);
+                },
+                validator: (value) {
+                  if (value == null || value.isEmpty) {
+                    return 'Please select a category';
+                  }
+                  return null;
                 },
               ),
               const SizedBox(height: 16),
@@ -638,6 +673,12 @@ class _EditEventScreenState extends State<EditEventScreen> {
                 }).toList(),
                 onChanged: (value) {
                   setState(() => _selectedStatus = value!);
+                },
+                validator: (value) {
+                  if (value == null) {
+                    return 'Please select a status';
+                  }
+                  return null;
                 },
               ),
               const SizedBox(height: 16),
@@ -862,6 +903,14 @@ class _EditEventScreenState extends State<EditEventScreen> {
                 onChanged: (value) => setState(() => _requireGuardianNumber = value ?? false),
                 controlAffinity: ListTileControlAffinity.leading,
               ),
+              const SizedBox(height: 16),
+              CheckboxListTile(
+                title: const Text('Allow Reviews/Feedback'),
+                subtitle: const Text('Participants can leave reviews after the event is completed'),
+                value: _allowReviews,
+                onChanged: (value) => setState(() => _allowReviews = value ?? false),
+                controlAffinity: ListTileControlAffinity.leading,
+              ),
               const SizedBox(height: 32),
               
               // Update Button
@@ -891,6 +940,7 @@ class _EditEventScreenState extends State<EditEventScreen> {
             ],
           ),
         ),
+      ),
       ),
     );
   }

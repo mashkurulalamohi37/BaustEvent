@@ -15,6 +15,36 @@ import 'edit_event_screen.dart';
 import 'manage_participants_screen.dart';
 import 'notifications_screen.dart';
 import '../services/theme_service.dart';
+import '../utils/data_cache.dart';
+
+// Helper class for list items (must be top-level, not nested)
+class _UserListItem {
+  final User? user;
+  final String? title;
+  final int? count;
+  final Color? color;
+  final bool isHeader;
+  final bool isSummary;
+  
+  _UserListItem.user(this.user)
+      : title = null,
+        count = null,
+        color = null,
+        isHeader = false,
+        isSummary = false;
+  
+  _UserListItem.header(this.title, this.count, this.color)
+      : user = null,
+        isHeader = true,
+        isSummary = false;
+  
+  _UserListItem.summary(this.count)
+      : user = null,
+        title = null,
+        color = null,
+        isHeader = false,
+        isSummary = true;
+}
 
 class AdminDashboard extends StatefulWidget {
   final String? userId;
@@ -336,14 +366,45 @@ class _AdminDashboardState extends State<AdminDashboard> {
 
   Future<void> _loadAllUsers() async {
     try {
-      final users = await FirebaseUserService.getAllUsers();
+      // Use paginated loading for better performance with 500+ users
+      // Load first 500 users initially, can add "Load More" button if needed
+      // Check cache first for faster loading
+      final cache = DataCache();
+      final cachedUsers = cache.getAllUsers();
+      
+      if (cachedUsers != null && cachedUsers.length <= 500) {
+        // Use cached data if available and reasonable size
+        if (mounted) {
+          setState(() {
+            _allUsers = cachedUsers;
+          });
+        }
+        // Still refresh in background
+        _refreshUsersInBackground();
+      } else {
+        // Load fresh data
+        final users = await FirebaseUserService.getAllUsers(limit: 500);
+        if (mounted) {
+          setState(() {
+            _allUsers = users;
+          });
+        }
+      }
+    } catch (e) {
+      print('Error loading users: $e');
+    }
+  }
+  
+  Future<void> _refreshUsersInBackground() async {
+    try {
+      final users = await FirebaseUserService.getAllUsers(limit: 500);
       if (mounted) {
         setState(() {
           _allUsers = users;
         });
       }
     } catch (e) {
-      print('Error loading users: $e');
+      print('Error refreshing users in background: $e');
     }
   }
 
@@ -501,19 +562,29 @@ class _AdminDashboardState extends State<AdminDashboard> {
           // Show confirmation dialog before exiting
           final shouldExit = await showDialog<bool>(
             context: context,
-            builder: (context) => AlertDialog(
-              title: const Text('Exit App?'),
-              content: const Text('Do you want to exit the app?'),
-              actions: [
-                TextButton(
-                  onPressed: () => Navigator.pop(context, false),
-                  child: const Text('Cancel'),
+            builder: (context) => Theme(
+              data: ThemeService.lightTheme,
+              child: AlertDialog(
+                backgroundColor: Colors.white,
+                title: const Text(
+                  'Exit App?',
+                  style: TextStyle(color: Colors.black87),
                 ),
-                TextButton(
-                  onPressed: () => Navigator.pop(context, true),
-                  child: const Text('Exit'),
+                content: const Text(
+                  'Do you want to exit the app?',
+                  style: TextStyle(color: Colors.black87),
                 ),
-              ],
+                actions: [
+                  TextButton(
+                    onPressed: () => Navigator.pop(context, false),
+                    child: const Text('Cancel'),
+                  ),
+                  TextButton(
+                    onPressed: () => Navigator.pop(context, true),
+                    child: const Text('Exit'),
+                  ),
+                ],
+              ),
             ),
           );
           if (shouldExit == true && mounted) {
@@ -522,9 +593,16 @@ class _AdminDashboardState extends State<AdminDashboard> {
           }
         },
         child: Scaffold(
-        appBar: AppBar(
-          title: const Text('Admin Dashboard'),
-          actions: [
+          backgroundColor: Colors.white,
+          appBar: AppBar(
+            backgroundColor: Colors.white,
+            foregroundColor: Colors.black87,
+            elevation: 1,
+            title: const Text(
+              'Admin Dashboard',
+              style: TextStyle(color: Colors.black87),
+            ),
+            actions: [
           IconButton(
             icon: const Icon(Icons.notifications_outlined),
             onPressed: () {
@@ -555,18 +633,27 @@ class _AdminDashboardState extends State<AdminDashboard> {
           _buildAnalyticsScreen(),
         ],
       ),
-      bottomNavigationBar: BottomNavigationBar(
-        currentIndex: _selectedIndex,
-        onTap: (index) {
-          setState(() {
-            _selectedIndex = index;
-          });
-          if (index == 2) {
-            _loadAllUsers(); // Refresh users when switching to users tab
-          }
-        },
-        type: BottomNavigationBarType.fixed,
-        items: const [
+      bottomNavigationBar: Theme(
+        data: Theme.of(context).copyWith(
+          splashFactory: NoSplash.splashFactory,
+          highlightColor: Colors.transparent,
+        ),
+        child: BottomNavigationBar(
+          backgroundColor: Colors.white,
+          selectedItemColor: const Color(0xFF1976D2),
+          unselectedItemColor: Colors.grey[600],
+          currentIndex: _selectedIndex,
+          onTap: (index) {
+            setState(() {
+              _selectedIndex = index;
+            });
+            if (index == 2) {
+              _loadAllUsers(); // Refresh users when switching to users tab
+            }
+          },
+          type: BottomNavigationBarType.fixed,
+          elevation: 8,
+          items: const [
           BottomNavigationBarItem(
             icon: Icon(Icons.person_add),
             activeIcon: Icon(Icons.person_add),
@@ -588,6 +675,7 @@ class _AdminDashboardState extends State<AdminDashboard> {
             label: 'Analytics',
           ),
         ],
+        ),
       ),
       ),
       ),
@@ -628,6 +716,7 @@ class _AdminDashboardState extends State<AdminDashboard> {
           children: [
             Card(
               elevation: 2,
+              color: Colors.white,
               child: Padding(
                 padding: const EdgeInsets.all(16.0),
                 child: Row(
@@ -640,7 +729,11 @@ class _AdminDashboardState extends State<AdminDashboard> {
                         children: [
                           Text(
                             'Welcome, ${_currentUser?.name ?? 'Admin'}!',
-                            style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
+                            style: const TextStyle(
+                              fontSize: 20,
+                              fontWeight: FontWeight.bold,
+                              color: Colors.black87,
+                            ),
                           ),
                           const SizedBox(height: 4),
                           Text(
@@ -771,12 +864,14 @@ class _AdminDashboardState extends State<AdminDashboard> {
               ),
             )
           : ListView.builder(
+              cacheExtent: 500, // Cache more items for smoother scrolling
               padding: const EdgeInsets.all(16.0),
               itemCount: _allEvents.length,
               itemBuilder: (context, index) {
                 final event = _allEvents[index];
                 return Card(
                   margin: const EdgeInsets.only(bottom: 12),
+                  color: Colors.white,
                   child: ListTile(
                     leading: CircleAvatar(
                       backgroundColor: _getCategoryColor(event.category),
@@ -787,17 +882,30 @@ class _AdminDashboardState extends State<AdminDashboard> {
                     ),
                     title: Text(
                       event.title,
-                      style: const TextStyle(fontWeight: FontWeight.bold),
+                      style: const TextStyle(
+                        fontWeight: FontWeight.bold,
+                        color: Colors.black87,
+                      ),
                     ),
                     subtitle: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Text('${DateFormat('MMM d, y').format(event.date)} • ${event.time}'),
-                        Text('${event.participants.length}/${event.maxParticipants} participants'),
-                        Text('Category: ${event.category}'),
+                        Text(
+                          '${DateFormat('MMM d, y').format(event.date)} • ${event.time}',
+                          style: TextStyle(color: Colors.grey[700]),
+                        ),
+                        Text(
+                          '${event.participants.length}/${event.maxParticipants} participants',
+                          style: TextStyle(color: Colors.grey[700]),
+                        ),
+                        Text(
+                          'Category: ${event.category}',
+                          style: TextStyle(color: Colors.grey[700]),
+                        ),
                       ],
                     ),
                     trailing: PopupMenuButton(
+                      color: Colors.white,
                       itemBuilder: (context) => [
                         const PopupMenuItem(
                           value: 'view',
@@ -937,20 +1045,21 @@ class _AdminDashboardState extends State<AdminDashboard> {
                     )
                   : null,
               border: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(12),
+                borderRadius: BorderRadius.circular(10),
                 borderSide: BorderSide(color: Colors.grey[300]!),
               ),
               enabledBorder: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(12),
+                borderRadius: BorderRadius.circular(10),
                 borderSide: BorderSide(color: Colors.grey[300]!),
               ),
               focusedBorder: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(12),
+                borderRadius: BorderRadius.circular(10),
                 borderSide: const BorderSide(color: Color(0xFF1976D2), width: 2),
               ),
               filled: true,
               fillColor: Colors.grey[50],
-              contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+              contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+              isDense: true,
             ),
             onChanged: (value) {
               setState(() {
@@ -999,80 +1108,117 @@ class _AdminDashboardState extends State<AdminDashboard> {
                           ],
                         ),
                       )
-                    : ListView(
-                        padding: const EdgeInsets.all(16.0),
-                        children: [
-                          // Search Results Summary
-                          if (_searchQuery.isNotEmpty)
-                            Padding(
-                              padding: const EdgeInsets.only(bottom: 16.0),
-                              child: Text(
-                                'Found ${filteredUsers.length} user${filteredUsers.length != 1 ? 's' : ''}',
-                                style: TextStyle(
-                                  fontSize: 14,
-                                  color: Colors.grey[600],
-                                  fontStyle: FontStyle.italic,
-                                ),
-                              ),
-                            ),
-                          
-                          // Admins Section
-                          if (adminUsers.isNotEmpty) ...[
-                            _buildUserSectionHeader('Admins', adminUsers.length, Colors.red),
-                            const SizedBox(height: 8),
-                            ...adminUsers.map((user) => _buildUserCard(user)),
-                            const SizedBox(height: 24),
-                          ],
-                          
-                          // Organizers Section
-                          if (organizerUsers.isNotEmpty) ...[
-                            _buildUserSectionHeader('Organizers', organizerUsers.length, Colors.blue),
-                            const SizedBox(height: 8),
-                            ...organizerUsers.map((user) => _buildUserCard(user)),
-                            const SizedBox(height: 24),
-                          ],
-                          
-                          // Participants Section
-                          if (participantUsers.isNotEmpty) ...[
-                            _buildUserSectionHeader('Participants', participantUsers.length, Colors.green),
-                            const SizedBox(height: 8),
-                            ...participantUsers.map((user) => _buildUserCard(user)),
-                          ],
-                        ],
-                      ),
+                    : _buildOptimizedUserList(adminUsers, organizerUsers, participantUsers, filteredUsers),
           ),
         ),
       ],
     );
   }
   
+  // Build optimized user list using ListView.builder for better performance
+  Widget _buildOptimizedUserList(
+    List<User> adminUsers,
+    List<User> organizerUsers,
+    List<User> participantUsers,
+    List<User> filteredUsers,
+  ) {
+    // Create a flat list with items and section headers
+    final List<_UserListItem> items = [];
+    
+    // Add search results summary if searching
+    if (_searchQuery.isNotEmpty) {
+      items.add(_UserListItem.summary(filteredUsers.length));
+    }
+    
+    // Add admins section
+    if (adminUsers.isNotEmpty) {
+      items.add(_UserListItem.header('Admins', adminUsers.length, Colors.red));
+      for (var user in adminUsers) {
+        items.add(_UserListItem.user(user));
+      }
+    }
+    
+    // Add organizers section
+    if (organizerUsers.isNotEmpty) {
+      items.add(_UserListItem.header('Organizers', organizerUsers.length, Colors.blue));
+      for (var user in organizerUsers) {
+        items.add(_UserListItem.user(user));
+      }
+    }
+    
+    // Add participants section
+    if (participantUsers.isNotEmpty) {
+      items.add(_UserListItem.header('Participants', participantUsers.length, Colors.green));
+      for (var user in participantUsers) {
+        items.add(_UserListItem.user(user));
+      }
+    }
+    
+    return ListView.builder(
+      cacheExtent: 500, // Cache more items for smoother scrolling
+      padding: const EdgeInsets.all(12.0),
+      itemCount: items.length,
+      itemBuilder: (context, index) {
+        final item = items[index];
+        if (item.isSummary) {
+          return Padding(
+            padding: const EdgeInsets.only(bottom: 12.0),
+            child: Text(
+              'Found ${item.count} user${item.count != 1 ? 's' : ''}',
+              style: TextStyle(
+                fontSize: 12,
+                color: Colors.grey[600],
+                fontStyle: FontStyle.italic,
+              ),
+            ),
+          );
+        } else if (item.isHeader) {
+          return Padding(
+            padding: index > 0 ? const EdgeInsets.only(top: 18, bottom: 6) : const EdgeInsets.only(bottom: 6),
+            child: _buildUserSectionHeader(item.title!, item.count!, item.color!),
+          );
+        } else {
+          return _buildUserCard(item.user!);
+        }
+      },
+    );
+  }
+  
+  
   Widget _buildUserSectionHeader(String title, int count, Color color) {
     return Row(
       children: [
         Container(
           width: 4,
-          height: 24,
+          height: 20,
           decoration: BoxDecoration(
             color: color,
             borderRadius: BorderRadius.circular(2),
           ),
         ),
-        const SizedBox(width: 12),
+        const SizedBox(width: 10),
         Text(
           title,
           style: TextStyle(
-            fontSize: 20,
+            fontSize: 18,
             fontWeight: FontWeight.bold,
             color: color,
           ),
         ),
-        const SizedBox(width: 8),
-        Chip(
-          label: Text('$count'),
-          backgroundColor: color.withOpacity(0.2),
-          labelStyle: TextStyle(
-            color: color,
-            fontWeight: FontWeight.bold,
+        const SizedBox(width: 6),
+        Container(
+          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+          decoration: BoxDecoration(
+            color: color.withOpacity(0.15),
+            borderRadius: BorderRadius.circular(10),
+          ),
+          child: Text(
+            '$count',
+            style: TextStyle(
+              color: color,
+              fontWeight: FontWeight.bold,
+              fontSize: 13,
+            ),
           ),
         ),
       ],
@@ -1103,25 +1249,26 @@ class _AdminDashboardState extends State<AdminDashboard> {
     }
     
     return Card(
-      margin: const EdgeInsets.only(bottom: 12),
-      elevation: isAdmin || isOrganizer ? 3 : 1,
+      margin: const EdgeInsets.only(bottom: 8),
+      elevation: isAdmin || isOrganizer ? 2 : 1,
       shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(12),
+        borderRadius: BorderRadius.circular(10),
         side: BorderSide(
           color: borderColor,
           width: borderWidth,
         ),
       ),
       color: cardColor,
+      shadowColor: Colors.black.withOpacity(0.1),
       child: ListTile(
-        contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+        contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
         leading: CircleAvatar(
-          radius: 28,
+          radius: 22,
           backgroundColor: _getUserTypeColor(user.type),
           child: Icon(
             _getUserTypeIcon(user.type),
             color: Colors.white,
-            size: 28,
+            size: 22,
           ),
         ),
         title: Row(
@@ -1131,7 +1278,7 @@ class _AdminDashboardState extends State<AdminDashboard> {
                 user.name,
                 style: TextStyle(
                   fontWeight: FontWeight.bold,
-                  fontSize: 16,
+                  fontSize: 15,
                   color: isAdmin ? Colors.red.shade900 : 
                          isOrganizer ? Colors.blue.shade900 : 
                          Colors.green.shade900,
@@ -1142,34 +1289,34 @@ class _AdminDashboardState extends State<AdminDashboard> {
           ],
         ),
         subtitle: Padding(
-          padding: const EdgeInsets.only(top: 8.0),
+          padding: const EdgeInsets.only(top: 6.0),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Row(
                 children: [
-                  Icon(Icons.email, size: 14, color: Colors.grey[600]),
+                  Icon(Icons.email, size: 12, color: Colors.grey[600]),
                   const SizedBox(width: 4),
                   Expanded(
                     child: Text(
                       user.email,
                       style: TextStyle(
-                        fontSize: 13,
+                        fontSize: 12,
                         color: Colors.grey[700],
                       ),
                     ),
                   ),
                 ],
               ),
-              const SizedBox(height: 4),
+              const SizedBox(height: 3),
               Row(
                 children: [
-                  Icon(Icons.badge, size: 14, color: Colors.grey[600]),
+                  Icon(Icons.badge, size: 12, color: Colors.grey[600]),
                   const SizedBox(width: 4),
                   Text(
                     'ID: ${user.universityId}',
                     style: TextStyle(
-                      fontSize: 13,
+                      fontSize: 12,
                       color: Colors.grey[700],
                     ),
                   ),
@@ -1181,15 +1328,22 @@ class _AdminDashboardState extends State<AdminDashboard> {
         trailing: user.isAdmin
             ? const SizedBox.shrink()
             : PopupMenuButton(
-                icon: Icon(Icons.more_vert, color: Colors.grey[700]),
+                color: Colors.white,
+                icon: Icon(Icons.more_vert, size: 20, color: Colors.grey[700]),
                 itemBuilder: (context) => [
-                  const PopupMenuItem(
+                  PopupMenuItem(
                     value: 'delete',
                     child: Row(
                       children: [
-                        Icon(Icons.delete, size: 20, color: Colors.red),
-                        SizedBox(width: 8),
-                        Text('Delete', style: TextStyle(color: Colors.red)),
+                        const Icon(Icons.delete, size: 20, color: Colors.red),
+                        const SizedBox(width: 8),
+                        Text(
+                          'Delete',
+                          style: TextStyle(
+                            color: Colors.red,
+                            fontWeight: FontWeight.w500,
+                          ),
+                        ),
                       ],
                     ),
                   ),
@@ -1228,10 +1382,10 @@ class _AdminDashboardState extends State<AdminDashboard> {
     }
     
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
       decoration: BoxDecoration(
         color: backgroundColor,
-        borderRadius: BorderRadius.circular(12),
+        borderRadius: BorderRadius.circular(8),
       ),
       child: Text(
         label,
@@ -1247,7 +1401,10 @@ class _AdminDashboardState extends State<AdminDashboard> {
   
   // Build Analytics Screen
   Widget _buildAnalyticsScreen() {
-    return AnalyticsScreen(events: _allEvents, showTopBar: false);
+    return Theme(
+      data: ThemeService.lightTheme,
+      child: AnalyticsScreen(events: _allEvents, showTopBar: false),
+    );
   }
   
   // Helper methods

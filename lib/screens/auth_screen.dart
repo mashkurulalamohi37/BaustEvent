@@ -5,6 +5,7 @@ import 'admin_dashboard.dart';
 import 'forgot_password_screen.dart';
 import '../models/user.dart';
 import '../services/firebase_user_service.dart';
+import '../utils/email_validator.dart';
 
 class AuthScreen extends StatefulWidget {
   final bool initialIsLogin;
@@ -19,15 +20,19 @@ class _AuthScreenState extends State<AuthScreen> {
   final _formKey = GlobalKey<FormState>();
   final _emailController = TextEditingController();
   final _passwordController = TextEditingController();
+  final _confirmPasswordController = TextEditingController();
   final _nameController = TextEditingController();
   final _universityIdController = TextEditingController();
   UserType _selectedType = UserType.participant;
   bool _isLoading = false;
+  bool _obscurePassword = true;
+  bool _obscureConfirmPassword = true;
 
   @override
   void dispose() {
     _emailController.dispose();
     _passwordController.dispose();
+    _confirmPasswordController.dispose();
     _nameController.dispose();
     _universityIdController.dispose();
     super.dispose();
@@ -100,6 +105,12 @@ class _AuthScreenState extends State<AuthScreen> {
                     DropdownMenuItem(value: UserType.organizer, child: Text('Organizer')),
                   ],
                   onChanged: (v) => setState(() => _selectedType = v ?? UserType.participant),
+                  validator: (value) {
+                    if (value == null) {
+                      return 'Please select an account type';
+                    }
+                    return null;
+                  },
                 ),
                 const SizedBox(height: 16),
                 TextFormField(
@@ -159,23 +170,26 @@ class _AuthScreenState extends State<AuthScreen> {
                     borderSide: const BorderSide(color: Color(0xFF1976D2), width: 2),
                   ),
                 ),
-                validator: (value) {
-                  if (value == null || value.isEmpty) {
-                    return 'Please enter your email';
-                  }
-                  if (!value.contains('@')) {
-                    return 'Please enter a valid email';
-                  }
-                  return null;
-                },
+                validator: (value) => EmailValidator.validateEmail(value),
               ),
               const SizedBox(height: 16),
               TextFormField(
                 controller: _passwordController,
-                obscureText: true,
+                obscureText: _obscurePassword,
                 decoration: InputDecoration(
                   labelText: 'Password',
                   prefixIcon: const Icon(Icons.lock),
+                  suffixIcon: IconButton(
+                    icon: Icon(
+                      _obscurePassword ? Icons.visibility_off : Icons.visibility,
+                      color: Colors.grey,
+                    ),
+                    onPressed: () {
+                      setState(() {
+                        _obscurePassword = !_obscurePassword;
+                      });
+                    },
+                  ),
                   border: OutlineInputBorder(
                     borderRadius: BorderRadius.circular(12),
                   ),
@@ -194,6 +208,44 @@ class _AuthScreenState extends State<AuthScreen> {
                   return null;
                 },
               ),
+              if (!isLogin) ...[
+                const SizedBox(height: 16),
+                TextFormField(
+                  controller: _confirmPasswordController,
+                  obscureText: _obscureConfirmPassword,
+                  decoration: InputDecoration(
+                    labelText: 'Confirm Password',
+                    prefixIcon: const Icon(Icons.lock_outline),
+                    suffixIcon: IconButton(
+                      icon: Icon(
+                        _obscureConfirmPassword ? Icons.visibility_off : Icons.visibility,
+                        color: Colors.grey,
+                      ),
+                      onPressed: () {
+                        setState(() {
+                          _obscureConfirmPassword = !_obscureConfirmPassword;
+                        });
+                      },
+                    ),
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    focusedBorder: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(12),
+                      borderSide: const BorderSide(color: Color(0xFF1976D2), width: 2),
+                    ),
+                  ),
+                  validator: (value) {
+                    if (value == null || value.isEmpty) {
+                      return 'Please confirm your password';
+                    }
+                    if (value != _passwordController.text) {
+                      return 'Passwords do not match';
+                    }
+                    return null;
+                  },
+                ),
+              ],
               const SizedBox(height: 24),
               if (isLogin) ...[
                 Align(
@@ -283,6 +335,26 @@ class _AuthScreenState extends State<AuthScreen> {
     if (!_formKey.currentState!.validate()) return;
 
     setState(() => _isLoading = true);
+
+    // Additional async email validation (domain existence check) - only for signup
+    if (!isLogin) {
+      final emailValidation = await EmailValidator.validateEmailWithDomainCheck(
+        _emailController.text.trim(),
+      );
+      if (emailValidation != null) {
+        if (mounted) {
+          setState(() => _isLoading = false);
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text(emailValidation),
+              backgroundColor: Colors.red,
+              duration: const Duration(seconds: 4),
+            ),
+          );
+        }
+        return;
+      }
+    }
 
     if (isLogin) {
       // Login - validate credentials

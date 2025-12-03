@@ -336,45 +336,67 @@ class _OrganizerDashboardState extends State<OrganizerDashboard> {
           _buildProfileScreen(),
         ],
       ),
-      bottomNavigationBar: BottomNavigationBar(
-        type: BottomNavigationBarType.fixed,
-        currentIndex: _selectedIndex,
-        onTap: (index) => setState(() => _selectedIndex = index),
-        selectedItemColor: const Color(0xFF1976D2),
-        unselectedItemColor: Colors.grey,
-        items: const [
-          BottomNavigationBarItem(
-            icon: Icon(Icons.home_outlined),
-            activeIcon: Icon(Icons.home),
-            label: 'Home',
+      bottomNavigationBar: Theme(
+        data: Theme.of(context).copyWith(
+          splashFactory: NoSplash.splashFactory,
+          highlightColor: Colors.transparent,
+        ),
+        child: BottomNavigationBar(
+          type: BottomNavigationBarType.fixed,
+          currentIndex: _selectedIndex,
+          onTap: (index) {
+            setState(() => _selectedIndex = index);
+          },
+          selectedItemColor: const Color(0xFF1976D2),
+          unselectedItemColor: Colors.grey[600],
+          selectedFontSize: 13,
+          unselectedFontSize: 12,
+          selectedLabelStyle: const TextStyle(
+            fontWeight: FontWeight.w600,
+            letterSpacing: 0.5,
           ),
-          BottomNavigationBarItem(
-            icon: Icon(Icons.add_circle_outline),
-            activeIcon: Icon(Icons.add_circle),
-            label: 'Create',
+          unselectedLabelStyle: const TextStyle(
+            fontWeight: FontWeight.w500,
+            letterSpacing: 0.3,
           ),
-          BottomNavigationBarItem(
-            icon: Icon(Icons.event_outlined),
-            activeIcon: Icon(Icons.event),
-            label: 'My Events',
-          ),
-          BottomNavigationBarItem(
-            icon: Icon(Icons.analytics_outlined),
-            activeIcon: Icon(Icons.analytics),
-            label: 'Analytics',
-          ),
-          BottomNavigationBarItem(
-            icon: Icon(Icons.person_outline),
-            activeIcon: Icon(Icons.person),
-            label: 'Profile',
-          ),
-        ],
+          elevation: 8,
+          backgroundColor: Theme.of(context).scaffoldBackgroundColor,
+          items: const [
+            BottomNavigationBarItem(
+              icon: Icon(Icons.home_outlined, size: 26),
+              activeIcon: Icon(Icons.home, size: 26),
+              label: 'Home',
+            ),
+            BottomNavigationBarItem(
+              icon: Icon(Icons.add_circle_outline, size: 26),
+              activeIcon: Icon(Icons.add_circle, size: 26),
+              label: 'Create',
+            ),
+            BottomNavigationBarItem(
+              icon: Icon(Icons.event_outlined, size: 26),
+              activeIcon: Icon(Icons.event, size: 26),
+              label: 'My Events',
+            ),
+            BottomNavigationBarItem(
+              icon: Icon(Icons.analytics_outlined, size: 26),
+              activeIcon: Icon(Icons.analytics, size: 26),
+              label: 'Analytics',
+            ),
+            BottomNavigationBarItem(
+              icon: Icon(Icons.person_outline, size: 26),
+              activeIcon: Icon(Icons.person, size: 26),
+              label: 'Profile',
+            ),
+          ],
+        ),
       ),
       ),
     );
   }
 
   Widget _buildHomeScreen() {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    
     if (_isLoading) {
       return const Center(child: CircularProgressIndicator());
     }
@@ -436,6 +458,7 @@ class _OrganizerDashboardState extends State<OrganizerDashboard> {
                     totalEvents.toString(), 
                     Icons.event, 
                     Colors.blue,
+                    isDark,
                   ),
                 ),
                 const SizedBox(width: 12),
@@ -445,6 +468,7 @@ class _OrganizerDashboardState extends State<OrganizerDashboard> {
                     totalParticipants.toString(), 
                     Icons.people, 
                     Colors.green,
+                    isDark,
                   ),
                 ),
               ],
@@ -458,6 +482,7 @@ class _OrganizerDashboardState extends State<OrganizerDashboard> {
                     eventsThisMonth.toString(), 
                     Icons.calendar_month, 
                     Colors.orange,
+                    isDark,
                   ),
                 ),
                 const SizedBox(width: 12),
@@ -467,23 +492,33 @@ class _OrganizerDashboardState extends State<OrganizerDashboard> {
                     pendingEvents.toString(), 
                     Icons.pending, 
                     Colors.red,
+                    isDark,
                   ),
                 ),
               ],
             ),
-            const SizedBox(height: 24),
+            const SizedBox(height: 20),
             
             // Analytics Quick Access
-            Card(
-              elevation: 2,
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+            Container(
+              decoration: BoxDecoration(
+                color: isDark ? Colors.grey[900] : Colors.white,
+                borderRadius: BorderRadius.circular(16),
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black.withOpacity(0.08),
+                    blurRadius: 12,
+                    offset: const Offset(0, 4),
+                  ),
+                ],
+              ),
               child: InkWell(
                 onTap: () {
                   setState(() {
                     _selectedIndex = 3; // Switch to Analytics tab
                   });
                 },
-                borderRadius: BorderRadius.circular(12),
+                borderRadius: BorderRadius.circular(16),
                 child: Padding(
                   padding: const EdgeInsets.all(16.0),
                   child: Row(
@@ -491,17 +526,17 @@ class _OrganizerDashboardState extends State<OrganizerDashboard> {
                       Container(
                         padding: const EdgeInsets.all(12),
                         decoration: BoxDecoration(
-                          color: Colors.purple.withOpacity(0.1),
-                          borderRadius: BorderRadius.circular(8),
+                          color: Colors.purple.withOpacity(0.15),
+                          borderRadius: BorderRadius.circular(12),
                         ),
                         child: const Icon(
                           Icons.analytics,
                           color: Colors.purple,
-                          size: 30,
+                          size: 28,
                         ),
                       ),
-                      const SizedBox(width: 16),
-                      const Expanded(
+                      const SizedBox(width: 14),
+                      Expanded(
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
@@ -510,20 +545,25 @@ class _OrganizerDashboardState extends State<OrganizerDashboard> {
                               style: TextStyle(
                                 fontSize: 16,
                                 fontWeight: FontWeight.bold,
+                                color: isDark ? Colors.white : Colors.black87,
                               ),
                             ),
-                            SizedBox(height: 4),
+                            const SizedBox(height: 4),
                             Text(
                               'See event success rates and statistics',
                               style: TextStyle(
                                 fontSize: 12,
-                                color: Colors.grey,
+                                color: isDark ? Colors.grey[400] : Colors.grey[600],
                               ),
                             ),
                           ],
                         ),
                       ),
-                      const Icon(Icons.arrow_forward_ios, size: 16, color: Colors.grey),
+                      Icon(
+                        Icons.arrow_forward_ios, 
+                        size: 16, 
+                        color: isDark ? Colors.grey[400] : Colors.grey[600],
+                      ),
                     ],
                   ),
                 ),
@@ -533,27 +573,8 @@ class _OrganizerDashboardState extends State<OrganizerDashboard> {
             
             // Upcoming Events
             if (upcomingEvents.isNotEmpty) ...[
-              Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  const Text(
-                    'Upcoming Events',
-                    style: TextStyle(
-                      fontSize: 20,
-                      fontWeight: FontWeight.bold,
-                    ),
-                  ),
-                  Text(
-                    '${upcomingEvents.length}',
-                    style: TextStyle(
-                      fontSize: 16,
-                      color: Colors.grey[600],
-                      fontWeight: FontWeight.w500,
-                    ),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 16),
+              _buildSectionHeader('Upcoming Events', upcomingEvents.length, isDark),
+              const SizedBox(height: 14),
               ...upcomingEvents.take(5).map((event) => Padding(
                 padding: const EdgeInsets.only(bottom: 12),
                 child: GestureDetector(
@@ -565,6 +586,7 @@ class _OrganizerDashboardState extends State<OrganizerDashboard> {
                     '${event.participants.length} participants',
                     _getStatusText(event.status),
                     _getStatusColor(event.status),
+                    isDark,
                   ),
                 ),
               )),
@@ -573,27 +595,8 @@ class _OrganizerDashboardState extends State<OrganizerDashboard> {
             
             // Ongoing Events
             if (ongoingEvents.isNotEmpty) ...[
-              Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  const Text(
-                    'Ongoing Events',
-                    style: TextStyle(
-                      fontSize: 20,
-                      fontWeight: FontWeight.bold,
-                    ),
-                  ),
-                  Text(
-                    '${ongoingEvents.length}',
-                    style: TextStyle(
-                      fontSize: 16,
-                      color: Colors.grey[600],
-                      fontWeight: FontWeight.w500,
-                    ),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 16),
+              _buildSectionHeader('Ongoing Events', ongoingEvents.length, isDark),
+              const SizedBox(height: 14),
               ...ongoingEvents.take(5).map((event) => Padding(
                 padding: const EdgeInsets.only(bottom: 12),
                 child: GestureDetector(
@@ -605,6 +608,7 @@ class _OrganizerDashboardState extends State<OrganizerDashboard> {
                     '${event.participants.length} participants',
                     _getStatusText(event.status),
                     _getStatusColor(event.status),
+                    isDark,
                   ),
                 ),
               )),
@@ -613,27 +617,8 @@ class _OrganizerDashboardState extends State<OrganizerDashboard> {
             
             // Past Events
             if (pastEvents.isNotEmpty) ...[
-              Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  const Text(
-                    'Past Events',
-                    style: TextStyle(
-                      fontSize: 20,
-                      fontWeight: FontWeight.bold,
-                    ),
-                  ),
-                  Text(
-                    '${pastEvents.length}',
-                    style: TextStyle(
-                      fontSize: 16,
-                      color: Colors.grey[600],
-                      fontWeight: FontWeight.w500,
-                    ),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 16),
+              _buildSectionHeader('Past Events', pastEvents.length, isDark),
+              const SizedBox(height: 14),
               ...pastEvents.take(3).map((event) => Padding(
                 padding: const EdgeInsets.only(bottom: 12),
                 child: GestureDetector(
@@ -645,6 +630,7 @@ class _OrganizerDashboardState extends State<OrganizerDashboard> {
                     '${event.participants.length} participants',
                     _getStatusText(event.status),
                     _getStatusColor(event.status),
+                    isDark,
                   ),
                 ),
               )),
@@ -652,16 +638,35 @@ class _OrganizerDashboardState extends State<OrganizerDashboard> {
             
             // Empty state
             if (_myEvents.isEmpty)
-              const Padding(
-                padding: EdgeInsets.all(32.0),
+              Container(
+                padding: const EdgeInsets.all(40.0),
                 child: Center(
-                  child: Text(
-                    'No events created yet.\nCreate your first event!',
-                    style: TextStyle(
-                      color: Colors.grey,
-                      fontSize: 16,
-                    ),
-                    textAlign: TextAlign.center,
+                  child: Column(
+                    children: [
+                      Icon(
+                        Icons.event_busy,
+                        size: 64,
+                        color: isDark ? Colors.grey[600] : Colors.grey[400],
+                      ),
+                      const SizedBox(height: 16),
+                      Text(
+                        'No events created yet',
+                        style: TextStyle(
+                          color: isDark ? Colors.grey[400] : Colors.grey[600],
+                          fontSize: 18,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                      Text(
+                        'Create your first event!',
+                        style: TextStyle(
+                          color: isDark ? Colors.grey[500] : Colors.grey[500],
+                          fontSize: 14,
+                        ),
+                        textAlign: TextAlign.center,
+                      ),
+                    ],
                   ),
                 ),
               ),
@@ -671,15 +676,56 @@ class _OrganizerDashboardState extends State<OrganizerDashboard> {
     );
   }
 
+  Widget _buildSectionHeader(String title, int count, bool isDark) {
+    return Row(
+      children: [
+        Container(
+          width: 4,
+          height: 20,
+          decoration: BoxDecoration(
+            color: const Color(0xFF1976D2),
+            borderRadius: BorderRadius.circular(2),
+          ),
+        ),
+        const SizedBox(width: 10),
+        Text(
+          title,
+          style: TextStyle(
+            fontSize: 20,
+            fontWeight: FontWeight.bold,
+            color: isDark ? Colors.white : Colors.black87,
+            letterSpacing: 0.3,
+          ),
+        ),
+        const Spacer(),
+        Container(
+          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+          decoration: BoxDecoration(
+            color: const Color(0xFF1976D2).withOpacity(0.1),
+            borderRadius: BorderRadius.circular(10),
+          ),
+          child: Text(
+            '$count',
+            style: const TextStyle(
+              fontSize: 13,
+              fontWeight: FontWeight.w600,
+              color: Color(0xFF1976D2),
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
   Widget _buildCreateEventScreen() {
     return Center(
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          const Icon(
-            Icons.add_circle_outline,
-            size: 80,
-            color: Colors.grey,
+          Icon(
+            Icons.add_circle,
+            size: 100,
+            color: const Color(0xFF1976D2).withOpacity(0.8),
           ),
           const SizedBox(height: 16),
           const Text(
@@ -718,14 +764,24 @@ class _OrganizerDashboardState extends State<OrganizerDashboard> {
                 _refreshData();
               }
             },
-            icon: const Icon(Icons.add),
-            label: const Text('Create Event'),
+            icon: const Icon(Icons.add, size: 24),
+            label: const Text(
+              'Create Event',
+              style: TextStyle(
+                fontSize: 18,
+                fontWeight: FontWeight.bold,
+              ),
+            ),
             style: ElevatedButton.styleFrom(
               backgroundColor: const Color(0xFF1976D2),
+              foregroundColor: Colors.white,
+              elevation: 8,
+              shadowColor: const Color(0xFF1976D2).withOpacity(0.5),
               shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(12),
+                borderRadius: BorderRadius.circular(16),
               ),
               padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 16),
+              minimumSize: const Size(180, 56),
             ),
           ),
         ],
@@ -734,6 +790,8 @@ class _OrganizerDashboardState extends State<OrganizerDashboard> {
   }
 
   Widget _buildMyEventsScreen() {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    
     if (_isLoading) {
       return const Center(child: CircularProgressIndicator());
     }
@@ -769,9 +827,10 @@ class _OrganizerDashboardState extends State<OrganizerDashboard> {
           children: [
             Text(
               'My Events (${_myEvents.length})',
-              style: const TextStyle(
+              style: TextStyle(
                 fontSize: 20,
                 fontWeight: FontWeight.bold,
+                color: isDark ? Colors.white : Colors.black87,
               ),
             ),
             const SizedBox(height: 24),
@@ -781,18 +840,19 @@ class _OrganizerDashboardState extends State<OrganizerDashboard> {
               Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
-                  const Text(
+                  Text(
                     'Upcoming',
                     style: TextStyle(
                       fontSize: 18,
                       fontWeight: FontWeight.w600,
+                      color: isDark ? Colors.white : Colors.black87,
                     ),
                   ),
                   Text(
                     '${upcomingEvents.length}',
                     style: TextStyle(
                       fontSize: 14,
-                      color: Colors.grey[600],
+                      color: isDark ? Colors.grey[400] : Colors.grey[600],
                     ),
                   ),
                 ],
@@ -807,6 +867,7 @@ class _OrganizerDashboardState extends State<OrganizerDashboard> {
                   '${event.participants.length} participants',
                   _getStatusText(event.status),
                   _getStatusColor(event.status),
+                  isDark,
                   onEdit: () => _editEvent(event),
                   onManage: () => _manageEvent(event),
                   onViewDetails: () => _viewEventDetails(event),
@@ -822,18 +883,19 @@ class _OrganizerDashboardState extends State<OrganizerDashboard> {
               Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
-                  const Text(
+                  Text(
                     'Ongoing',
                     style: TextStyle(
                       fontSize: 18,
                       fontWeight: FontWeight.w600,
+                      color: isDark ? Colors.white : Colors.black87,
                     ),
                   ),
                   Text(
                     '${ongoingEvents.length}',
                     style: TextStyle(
                       fontSize: 14,
-                      color: Colors.grey[600],
+                      color: isDark ? Colors.grey[400] : Colors.grey[600],
                     ),
                   ),
                 ],
@@ -848,6 +910,7 @@ class _OrganizerDashboardState extends State<OrganizerDashboard> {
                   '${event.participants.length} participants',
                   _getStatusText(event.status),
                   _getStatusColor(event.status),
+                  isDark,
                   onEdit: () => _editEvent(event),
                   onManage: () => _manageEvent(event),
                   onViewDetails: () => _viewEventDetails(event),
@@ -863,18 +926,19 @@ class _OrganizerDashboardState extends State<OrganizerDashboard> {
               Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
-                  const Text(
+                  Text(
                     'Past',
                     style: TextStyle(
                       fontSize: 18,
                       fontWeight: FontWeight.w600,
+                      color: isDark ? Colors.white : Colors.black87,
                     ),
                   ),
                   Text(
                     '${pastEvents.length}',
                     style: TextStyle(
                       fontSize: 14,
-                      color: Colors.grey[600],
+                      color: isDark ? Colors.grey[400] : Colors.grey[600],
                     ),
                   ),
                 ],
@@ -889,6 +953,7 @@ class _OrganizerDashboardState extends State<OrganizerDashboard> {
                   '${event.participants.length} participants',
                   _getStatusText(event.status),
                   _getStatusColor(event.status),
+                  isDark,
                   onEdit: () => _editEvent(event),
                   onManage: () => _manageEvent(event),
                   onViewDetails: () => _viewEventDetails(event),
@@ -900,16 +965,35 @@ class _OrganizerDashboardState extends State<OrganizerDashboard> {
             
             // Empty state
             if (_myEvents.isEmpty)
-              const Padding(
-                padding: EdgeInsets.all(32.0),
+              Padding(
+                padding: const EdgeInsets.all(32.0),
                 child: Center(
-                  child: Text(
-                    'No events created yet.\nCreate your first event!',
-                    style: TextStyle(
-                      color: Colors.grey,
-                      fontSize: 16,
-                    ),
-                    textAlign: TextAlign.center,
+                  child: Column(
+                    children: [
+                      Icon(
+                        Icons.event_busy,
+                        size: 64,
+                        color: isDark ? Colors.grey[600] : Colors.grey[400],
+                      ),
+                      const SizedBox(height: 16),
+                      Text(
+                        'No events created yet',
+                        style: TextStyle(
+                          color: isDark ? Colors.grey[400] : Colors.grey[600],
+                          fontSize: 18,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                      Text(
+                        'Create your first event!',
+                        style: TextStyle(
+                          color: isDark ? Colors.grey[500] : Colors.grey[500],
+                          fontSize: 14,
+                        ),
+                        textAlign: TextAlign.center,
+                      ),
+                    ],
                   ),
                 ),
               ),
@@ -924,101 +1008,246 @@ class _OrganizerDashboardState extends State<OrganizerDashboard> {
   }
 
   Widget _buildProfileScreen() {
-    return Padding(
-      padding: const EdgeInsets.all(16.0),
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    
+    return SingleChildScrollView(
+      padding: const EdgeInsets.all(20.0),
       child: Column(
         children: [
-          CircleAvatar(
-            radius: 50,
-            backgroundColor: const Color(0xFF1976D2),
-            backgroundImage: _currentUser?.profileImageUrl != null
-                ? NetworkImage(_currentUser!.profileImageUrl!)
-                : null,
-            child: _currentUser?.profileImageUrl == null
-                ? const Icon(
-                    Icons.person,
-                    size: 50,
-                    color: Colors.white,
-                  )
-                : null,
-          ),
-          const SizedBox(height: 16),
-          Text(
-            _currentUser?.name ?? 'Organizer',
-            style: const TextStyle(
-              fontSize: 24,
-              fontWeight: FontWeight.bold,
-            ),
-          ),
-          Text(
-            _currentUser?.email ?? 'Event Organizer',
-            style: const TextStyle(
-              fontSize: 16,
-              color: Colors.grey,
-            ),
-          ),
-          const SizedBox(height: 32),
-          _buildProfileOption('Edit Profile', Icons.edit, () async {
-            final updated = await Navigator.push(
-              context,
-              MaterialPageRoute(
-                builder: (context) => EditProfileScreen(
-                  userId: _currentUser?.id ?? widget.userId,
+          // Profile Header Card
+          Container(
+            padding: const EdgeInsets.all(24),
+            decoration: BoxDecoration(
+              color: isDark ? Colors.grey[900] : Colors.white,
+              borderRadius: BorderRadius.circular(24),
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withOpacity(0.08),
+                  blurRadius: 20,
+                  offset: const Offset(0, 8),
                 ),
-              ),
-            );
-            if (updated == true) {
-              _refreshData();
-            }
-          }),
-          _buildProfileOption('Settings', Icons.settings, () {
-            Navigator.push(
-              context,
-              MaterialPageRoute(
-                builder: (context) => const SettingsScreen(),
-              ),
-            );
-          }),
-          _buildProfileOption('Help & Support', Icons.help, () {
-            Navigator.push(
-              context,
-              MaterialPageRoute(
-                builder: (context) => const HelpSupportScreen(),
-              ),
-            );
-          }),
-          const Spacer(),
+              ],
+            ),
+            child: Column(
+              children: [
+                Container(
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    border: Border.all(
+                      color: const Color(0xFF1976D2),
+                      width: 4,
+                    ),
+                    boxShadow: [
+                      BoxShadow(
+                        color: const Color(0xFF1976D2).withOpacity(0.3),
+                        blurRadius: 12,
+                        offset: const Offset(0, 4),
+                      ),
+                    ],
+                  ),
+                  child: CircleAvatar(
+                    radius: 60,
+                    backgroundColor: const Color(0xFF1976D2).withOpacity(0.1),
+                    backgroundImage: _currentUser?.profileImageUrl != null
+                        ? NetworkImage(_currentUser!.profileImageUrl!)
+                        : null,
+                    child: _currentUser?.profileImageUrl == null
+                        ? const Icon(
+                            Icons.person,
+                            size: 60,
+                            color: Color(0xFF1976D2),
+                          )
+                        : null,
+                  ),
+                ),
+                const SizedBox(height: 20),
+                Text(
+                  _currentUser?.name ?? 'Organizer',
+                  style: TextStyle(
+                    fontSize: 26,
+                    fontWeight: FontWeight.bold,
+                    color: isDark ? Colors.white : Colors.black87,
+                    letterSpacing: 0.5,
+                  ),
+                ),
+                const SizedBox(height: 8),
+                if (_currentUser?.email != null)
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Icon(
+                        Icons.email_outlined, 
+                        size: 18, 
+                        color: isDark ? Colors.grey[200] : Colors.grey[700],
+                      ),
+                      const SizedBox(width: 8),
+                      Text(
+                        _currentUser!.email!,
+                        style: TextStyle(
+                          fontSize: 16,
+                          color: isDark ? Colors.grey[100] : Colors.grey[800],
+                          fontWeight: FontWeight.w500,
+                        ),
+                      ),
+                    ],
+                  ),
+                if (_currentUser?.universityId != null) ...[
+                  const SizedBox(height: 8),
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Icon(
+                        Icons.badge_outlined, 
+                        size: 18, 
+                        color: isDark ? Colors.grey[200] : Colors.grey[700],
+                      ),
+                      const SizedBox(width: 8),
+                      Text(
+                        'ID: ${_currentUser!.universityId}',
+                        style: TextStyle(
+                          fontSize: 15,
+                          color: isDark ? Colors.grey[100] : Colors.grey[800],
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
+              ],
+            ),
+          ),
+          const SizedBox(height: 24),
+          
+          // Profile Options Card
+          Container(
+            decoration: BoxDecoration(
+              color: isDark ? Colors.grey[900] : Colors.white,
+              borderRadius: BorderRadius.circular(20),
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withOpacity(0.08),
+                  blurRadius: 10,
+                  offset: const Offset(0, 4),
+                ),
+              ],
+            ),
+            child: Column(
+              children: [
+                _buildProfileOption(
+                  'Edit Profile',
+                  Icons.edit_outlined,
+                  const Color(0xFF1976D2),
+                  () async {
+                    final updated = await Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (context) => EditProfileScreen(
+                          userId: _currentUser?.id ?? widget.userId,
+                        ),
+                      ),
+                    );
+                    if (updated == true) {
+                      _refreshData();
+                    }
+                  },
+                ),
+                _buildDivider(),
+                _buildProfileOption(
+                  'Settings',
+                  Icons.settings_outlined,
+                  Colors.grey[700]!,
+                  () {
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (context) => const SettingsScreen(),
+                      ),
+                    );
+                  },
+                ),
+                _buildDivider(),
+                _buildProfileOption(
+                  'Help & Support',
+                  Icons.help_outline,
+                  Colors.green,
+                  () {
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (context) => const HelpSupportScreen(),
+                      ),
+                    );
+                  },
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 24),
+          
+          // Logout Button
           SizedBox(
             width: double.infinity,
-            child: ElevatedButton(
+            height: 52,
+            child: ElevatedButton.icon(
               onPressed: () async {
-                // Sign out from Firebase Auth
-                await FirebaseUserService.signOut();
-                // Clear user state
-                setState(() => _currentUser = null);
-                // Navigate to welcome screen
-                if (mounted) {
-                  Navigator.pushAndRemoveUntil(
-                    context,
-                    MaterialPageRoute(
-                      builder: (context) => const WelcomeScreen(),
+                // Show confirmation dialog
+                final confirm = await showDialog<bool>(
+                  context: context,
+                  builder: (context) => AlertDialog(
+                    title: const Text('Logout'),
+                    content: const Text('Are you sure you want to logout?'),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(16),
                     ),
-                    (route) => false,
-                  );
+                    actions: [
+                      TextButton(
+                        onPressed: () => Navigator.pop(context, false),
+                        child: const Text('Cancel'),
+                      ),
+                      ElevatedButton(
+                        onPressed: () => Navigator.pop(context, true),
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: Colors.red,
+                        ),
+                        child: const Text('Logout'),
+                      ),
+                    ],
+                  ),
+                );
+                
+                if (confirm == true) {
+                  // Sign out from Firebase Auth
+                  await FirebaseUserService.signOut();
+                  // Clear user state
+                  setState(() => _currentUser = null);
+                  // Navigate to welcome screen
+                  if (mounted) {
+                    Navigator.pushAndRemoveUntil(
+                      context,
+                      MaterialPageRoute(
+                        builder: (context) => const WelcomeScreen(),
+                      ),
+                      (route) => false,
+                    );
+                  }
                 }
               },
-              style: ElevatedButton.styleFrom(
-                backgroundColor: Colors.red,
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(12),
-                ),
-              ),
-              child: const Text(
+              icon: const Icon(Icons.logout, size: 22, color: Colors.white),
+              label: const Text(
                 'Logout',
                 style: TextStyle(
-                  fontSize: 16,
-                  fontWeight: FontWeight.w600,
+                  fontSize: 17,
+                  fontWeight: FontWeight.w700,
                   color: Colors.white,
+                  letterSpacing: 0.5,
+                ),
+              ),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: Colors.red[700],
+                elevation: 4,
+                shadowColor: Colors.red.withOpacity(0.4),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(16),
                 ),
               ),
             ),
@@ -1028,31 +1257,48 @@ class _OrganizerDashboardState extends State<OrganizerDashboard> {
     );
   }
 
-  Widget _buildStatCard(String title, String value, IconData icon, Color color) {
-    return Card(
-      elevation: 2,
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(12),
+  Widget _buildStatCard(String title, String value, IconData icon, Color color, bool isDark) {
+    return Container(
+      decoration: BoxDecoration(
+        color: isDark ? Colors.grey[900] : Colors.white,
+        borderRadius: BorderRadius.circular(16),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.08),
+            blurRadius: 10,
+            offset: const Offset(0, 3),
+          ),
+        ],
       ),
       child: Padding(
         padding: const EdgeInsets.all(16.0),
         child: Column(
           children: [
-            Icon(icon, size: 30, color: color),
-            const SizedBox(height: 8),
+            Container(
+              padding: const EdgeInsets.all(10),
+              decoration: BoxDecoration(
+                color: color.withOpacity(0.15),
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: Icon(icon, size: 24, color: color),
+            ),
+            const SizedBox(height: 12),
             Text(
               value,
               style: TextStyle(
                 fontSize: 24,
                 fontWeight: FontWeight.bold,
                 color: color,
+                letterSpacing: 0.5,
               ),
             ),
+            const SizedBox(height: 5),
             Text(
               title,
-              style: const TextStyle(
+              style: TextStyle(
                 fontSize: 12,
-                color: Colors.grey,
+                color: isDark ? Colors.grey[400] : Colors.grey[600],
+                fontWeight: FontWeight.w500,
               ),
             ),
           ],
@@ -1068,11 +1314,19 @@ class _OrganizerDashboardState extends State<OrganizerDashboard> {
     String participants,
     String status,
     Color statusColor,
+    bool isDark,
   ) {
-    return Card(
-      elevation: 2,
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(12),
+    return Container(
+      decoration: BoxDecoration(
+        color: isDark ? Colors.grey[900] : Colors.white,
+        borderRadius: BorderRadius.circular(16),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.08),
+            blurRadius: 10,
+            offset: const Offset(0, 3),
+          ),
+        ],
       ),
       child: Padding(
         padding: const EdgeInsets.all(16.0),
@@ -1084,24 +1338,65 @@ class _OrganizerDashboardState extends State<OrganizerDashboard> {
                 Expanded(
                   child: Text(
                     title,
-                    style: const TextStyle(
-                      fontSize: 16,
+                    style: TextStyle(
+                      fontSize: 17,
                       fontWeight: FontWeight.bold,
+                      color: isDark ? Colors.white : Colors.black87,
                     ),
                   ),
                 ),
                 Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
                   decoration: BoxDecoration(
-                    color: statusColor.withOpacity(0.1),
+                    color: statusColor.withOpacity(0.15),
                     borderRadius: BorderRadius.circular(12),
                   ),
                   child: Text(
                     status,
                     style: TextStyle(
-                      fontSize: 12,
+                      fontSize: 11,
                       color: statusColor,
                       fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 12),
+            Row(
+              children: [
+                Icon(
+                  Icons.access_time, 
+                  size: 16, 
+                  color: isDark ? Colors.grey[400] : Colors.grey[600],
+                ),
+                const SizedBox(width: 6),
+                Text(
+                  dateTime,
+                  style: TextStyle(
+                    fontSize: 13,
+                    color: isDark ? Colors.grey[300] : Colors.grey[700],
+                    fontWeight: FontWeight.w500,
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 8),
+            Row(
+              children: [
+                Icon(
+                  Icons.location_on, 
+                  size: 16, 
+                  color: isDark ? Colors.grey[400] : Colors.grey[600],
+                ),
+                const SizedBox(width: 6),
+                Expanded(
+                  child: Text(
+                    location,
+                    style: TextStyle(
+                      fontSize: 13,
+                      color: isDark ? Colors.grey[300] : Colors.grey[700],
+                      fontWeight: FontWeight.w500,
                     ),
                   ),
                 ),
@@ -1110,41 +1405,18 @@ class _OrganizerDashboardState extends State<OrganizerDashboard> {
             const SizedBox(height: 8),
             Row(
               children: [
-                const Icon(Icons.schedule, size: 16, color: Colors.grey),
-                const SizedBox(width: 4),
-                Text(
-                  dateTime,
-                  style: const TextStyle(
-                    fontSize: 14,
-                    color: Colors.grey,
-                  ),
+                Icon(
+                  Icons.people, 
+                  size: 16, 
+                  color: isDark ? Colors.grey[400] : Colors.grey[600],
                 ),
-              ],
-            ),
-            const SizedBox(height: 4),
-            Row(
-              children: [
-                const Icon(Icons.location_on, size: 16, color: Colors.grey),
-                const SizedBox(width: 4),
-                Text(
-                  location,
-                  style: const TextStyle(
-                    fontSize: 14,
-                    color: Colors.grey,
-                  ),
-                ),
-              ],
-            ),
-            const SizedBox(height: 4),
-            Row(
-              children: [
-                const Icon(Icons.people, size: 16, color: Colors.grey),
-                const SizedBox(width: 4),
+                const SizedBox(width: 6),
                 Text(
                   participants,
-                  style: const TextStyle(
-                    fontSize: 14,
-                    color: Colors.grey,
+                  style: TextStyle(
+                    fontSize: 13,
+                    color: isDark ? Colors.grey[300] : Colors.grey[700],
+                    fontWeight: FontWeight.w500,
                   ),
                 ),
               ],
@@ -1161,17 +1433,25 @@ class _OrganizerDashboardState extends State<OrganizerDashboard> {
     String location,
     String participants,
     String status,
-    Color statusColor, {
+    Color statusColor,
+    bool isDark, {
     VoidCallback? onEdit,
     VoidCallback? onManage,
     VoidCallback? onDelete,
     VoidCallback? onMarkDone,
     VoidCallback? onViewDetails,
   }) {
-    return Card(
-      elevation: 2,
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(12),
+    return Container(
+      decoration: BoxDecoration(
+        color: isDark ? Colors.grey[900] : Colors.white,
+        borderRadius: BorderRadius.circular(16),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.08),
+            blurRadius: 10,
+            offset: const Offset(0, 3),
+          ),
+        ],
       ),
       child: Padding(
         padding: const EdgeInsets.all(16.0),
@@ -1183,22 +1463,23 @@ class _OrganizerDashboardState extends State<OrganizerDashboard> {
                 Expanded(
                   child: Text(
                     title,
-                    style: const TextStyle(
-                      fontSize: 16,
+                    style: TextStyle(
+                      fontSize: 17,
                       fontWeight: FontWeight.bold,
+                      color: isDark ? Colors.white : Colors.black87,
                     ),
                   ),
                 ),
                 Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
                   decoration: BoxDecoration(
-                    color: statusColor.withOpacity(0.1),
+                    color: statusColor.withOpacity(0.15),
                     borderRadius: BorderRadius.circular(12),
                   ),
                   child: Text(
                     status,
                     style: TextStyle(
-                      fontSize: 12,
+                      fontSize: 11,
                       color: statusColor,
                       fontWeight: FontWeight.w600,
                     ),
@@ -1207,7 +1488,12 @@ class _OrganizerDashboardState extends State<OrganizerDashboard> {
                 const SizedBox(width: 8),
                 // Menu button for additional actions
                 PopupMenuButton<String>(
-                  icon: const Icon(Icons.more_vert, color: Colors.grey, size: 20),
+                  icon: Icon(
+                    Icons.more_vert, 
+                    color: isDark ? Colors.grey[400] : Colors.grey[600], 
+                    size: 20,
+                  ),
+                  color: isDark ? Colors.grey[800] : Colors.white,
                   onSelected: (value) {
                     if (value == 'view' && onViewDetails != null) {
                       onViewDetails();
@@ -1218,30 +1504,44 @@ class _OrganizerDashboardState extends State<OrganizerDashboard> {
                     }
                   },
                   itemBuilder: (context) => [
-                    const PopupMenuItem(
+                    PopupMenuItem(
                       value: 'view',
                       child: Row(
                         children: [
-                          Icon(Icons.visibility, size: 20),
-                          SizedBox(width: 8),
-                          Text('View Details'),
+                          Icon(
+                            Icons.visibility, 
+                            size: 20,
+                            color: isDark ? Colors.grey[300] : Colors.black87,
+                          ),
+                          const SizedBox(width: 8),
+                          Text(
+                            'View Details',
+                            style: TextStyle(
+                              color: isDark ? Colors.grey[300] : Colors.black87,
+                            ),
+                          ),
                         ],
                       ),
                     ),
                     if (status != 'Completed')
-                      const PopupMenuItem(
+                      PopupMenuItem(
                         value: 'done',
                         child: Row(
                           children: [
-                            Icon(Icons.check_circle, size: 20, color: Colors.orange),
-                            SizedBox(width: 8),
-                            Text('Mark as Done'),
+                            const Icon(Icons.check_circle, size: 20, color: Colors.orange),
+                            const SizedBox(width: 8),
+                            Text(
+                              'Mark as Done',
+                              style: TextStyle(
+                                color: isDark ? Colors.grey[300] : Colors.black87,
+                              ),
+                            ),
                           ],
                         ),
                       ),
-                    const PopupMenuItem(
+                    PopupMenuItem(
                       value: 'delete',
-                      child: Row(
+                      child: const Row(
                         children: [
                           Icon(Icons.delete, size: 20, color: Colors.red),
                           SizedBox(width: 8),
@@ -1253,44 +1553,61 @@ class _OrganizerDashboardState extends State<OrganizerDashboard> {
                 ),
               ],
             ),
+            const SizedBox(height: 12),
+            Row(
+              children: [
+                Icon(
+                  Icons.access_time, 
+                  size: 16, 
+                  color: isDark ? Colors.grey[400] : Colors.grey[600],
+                ),
+                const SizedBox(width: 6),
+                Text(
+                  dateTime,
+                  style: TextStyle(
+                    fontSize: 13,
+                    color: isDark ? Colors.grey[300] : Colors.grey[700],
+                    fontWeight: FontWeight.w500,
+                  ),
+                ),
+              ],
+            ),
             const SizedBox(height: 8),
             Row(
               children: [
-                const Icon(Icons.schedule, size: 16, color: Colors.grey),
-                const SizedBox(width: 4),
-                Text(
-                  dateTime,
-                  style: const TextStyle(
-                    fontSize: 14,
-                    color: Colors.grey,
+                Icon(
+                  Icons.location_on, 
+                  size: 16, 
+                  color: isDark ? Colors.grey[400] : Colors.grey[600],
+                ),
+                const SizedBox(width: 6),
+                Expanded(
+                  child: Text(
+                    location,
+                    style: TextStyle(
+                      fontSize: 13,
+                      color: isDark ? Colors.grey[300] : Colors.grey[700],
+                      fontWeight: FontWeight.w500,
+                    ),
                   ),
                 ),
               ],
             ),
-            const SizedBox(height: 4),
+            const SizedBox(height: 8),
             Row(
               children: [
-                const Icon(Icons.location_on, size: 16, color: Colors.grey),
-                const SizedBox(width: 4),
-                Text(
-                  location,
-                  style: const TextStyle(
-                    fontSize: 14,
-                    color: Colors.grey,
-                  ),
+                Icon(
+                  Icons.people, 
+                  size: 16, 
+                  color: isDark ? Colors.grey[400] : Colors.grey[600],
                 ),
-              ],
-            ),
-            const SizedBox(height: 4),
-            Row(
-              children: [
-                const Icon(Icons.people, size: 16, color: Colors.grey),
-                const SizedBox(width: 4),
+                const SizedBox(width: 6),
                 Text(
                   participants,
-                  style: const TextStyle(
-                    fontSize: 14,
-                    color: Colors.grey,
+                  style: TextStyle(
+                    fontSize: 13,
+                    color: isDark ? Colors.grey[300] : Colors.grey[700],
+                    fontWeight: FontWeight.w500,
                   ),
                 ),
               ],
@@ -1304,7 +1621,7 @@ class _OrganizerDashboardState extends State<OrganizerDashboard> {
                     style: OutlinedButton.styleFrom(
                       side: const BorderSide(color: Color(0xFF1976D2)),
                       shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(8),
+                        borderRadius: BorderRadius.circular(10),
                       ),
                     ),
                     child: const Text(
@@ -1320,7 +1637,7 @@ class _OrganizerDashboardState extends State<OrganizerDashboard> {
                     style: ElevatedButton.styleFrom(
                       backgroundColor: const Color(0xFF1976D2),
                       shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(8),
+                        borderRadius: BorderRadius.circular(10),
                       ),
                     ),
                     child: const Text(
@@ -1337,12 +1654,59 @@ class _OrganizerDashboardState extends State<OrganizerDashboard> {
     );
   }
 
-  Widget _buildProfileOption(String title, IconData icon, VoidCallback onTap) {
-    return ListTile(
-      leading: Icon(icon),
-      title: Text(title),
-      trailing: const Icon(Icons.arrow_forward_ios, size: 16),
+  Widget _buildProfileOption(String title, IconData icon, Color iconColor, VoidCallback onTap) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    
+    return InkWell(
       onTap: onTap,
+      borderRadius: BorderRadius.circular(12),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
+        child: Row(
+          children: [
+            Container(
+              padding: const EdgeInsets.all(10),
+              decoration: BoxDecoration(
+                color: iconColor.withOpacity(0.1),
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: Icon(
+                icon,
+                color: iconColor,
+                size: 24,
+              ),
+            ),
+            const SizedBox(width: 16),
+            Expanded(
+              child: Text(
+                title,
+                style: TextStyle(
+                  fontSize: 16,
+                  fontWeight: FontWeight.w500,
+                  color: isDark ? Colors.white : Colors.black87,
+                ),
+              ),
+            ),
+            Icon(
+              Icons.arrow_forward_ios,
+              size: 16,
+              color: Colors.grey[400],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildDivider() {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    
+    return Divider(
+      height: 1,
+      thickness: 1,
+      indent: 60,
+      endIndent: 16,
+      color: isDark ? Colors.grey[700] : Colors.grey[300],
     );
   }
 

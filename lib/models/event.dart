@@ -28,6 +28,8 @@ class Event {
   final bool requireGender;
   final bool requirePersonalNumber;
   final bool requireGuardianNumber;
+  final String? hostName;
+  final bool allowReviews;
   final DateTime createdAt;
 
   Event({
@@ -59,6 +61,8 @@ class Event {
     this.requireGender = false,
     this.requirePersonalNumber = false,
     this.requireGuardianNumber = false,
+    this.hostName,
+    this.allowReviews = false,
     DateTime? createdAt,
   }) : createdAt = createdAt ?? DateTime(2020, 1, 1);
 
@@ -136,6 +140,8 @@ class Event {
       requireGender: json['requireGender'] ?? false,
       requirePersonalNumber: json['requirePersonalNumber'] ?? false,
       requireGuardianNumber: json['requireGuardianNumber'] ?? false,
+      hostName: json['hostName'] as String?,
+      allowReviews: json['allowReviews'] ?? false,
       createdAt: json['createdAt'] != null
           ? DateTime.tryParse(json['createdAt']) ?? DateTime.now()
           : DateTime.now(),
@@ -173,6 +179,8 @@ class Event {
     bool? requireGender,
     bool? requirePersonalNumber,
     bool? requireGuardianNumber,
+    String? hostName,
+    bool? allowReviews,
     DateTime? createdAt,
     bool createdAtSet = false,
   }) {
@@ -207,6 +215,8 @@ class Event {
       requireGender: requireGender ?? this.requireGender,
       requirePersonalNumber: requirePersonalNumber ?? this.requirePersonalNumber,
       requireGuardianNumber: requireGuardianNumber ?? this.requireGuardianNumber,
+      hostName: hostName ?? this.hostName,
+      allowReviews: allowReviews ?? this.allowReviews,
       createdAt: createdAtSet ? createdAt : (createdAt ?? this.createdAt),
     );
   }
@@ -263,6 +273,8 @@ extension EventFirestore on Event {
       'requireGender': requireGender,
       'requirePersonalNumber': requirePersonalNumber,
       'requireGuardianNumber': requireGuardianNumber,
+      'hostName': hostName,
+      'allowReviews': allowReviews,
       'createdAt': createdAt.toIso8601String(),
     };
   }
@@ -327,6 +339,8 @@ extension EventFirestore on Event {
       requireGender: data['requireGender'] ?? false,
       requirePersonalNumber: data['requirePersonalNumber'] ?? false,
       requireGuardianNumber: data['requireGuardianNumber'] ?? false,
+      hostName: data['hostName'] as String?,
+      allowReviews: data['allowReviews'] ?? false,
       createdAt: data['createdAt'] != null
           ? _parseDate(data['createdAt'])
           : _parseDate(data['date']), // Use event date as fallback for old events without createdAt

@@ -26,6 +26,7 @@ class _CreateEventScreenState extends State<CreateEventScreen> {
   final _locationController = TextEditingController();
   final _timeController = TextEditingController();
   final _maxParticipantsController = TextEditingController(text: '100');
+  final _hostNameController = TextEditingController();
   
   DateTime? _selectedDate;
   TimeOfDay? _selectedTime;
@@ -50,6 +51,7 @@ class _CreateEventScreenState extends State<CreateEventScreen> {
   bool _requireGender = false;
   bool _requirePersonalNumber = false;
   bool _requireGuardianNumber = false;
+  bool _allowReviews = false;
 
   final List<String> _categories = [
     'Seminars',
@@ -84,6 +86,7 @@ class _CreateEventScreenState extends State<CreateEventScreen> {
     _paymentAmountController.dispose();
     _bkashNumberController.dispose();
     _nagadNumberController.dispose();
+    _hostNameController.dispose();
     super.dispose();
   }
 
@@ -379,6 +382,9 @@ class _CreateEventScreenState extends State<CreateEventScreen> {
         category: _selectedCategory,
         organizerId: organizerId,
         maxParticipants: int.tryParse(_maxParticipantsController.text) ?? 100,
+        hostName: _hostNameController.text.trim().isNotEmpty 
+            ? _hostNameController.text.trim() 
+            : null,
         status: EventStatus.published,
         imageUrl: imageUrl,
         registrationCloseDate: _registrationCloseDate,
@@ -403,6 +409,7 @@ class _CreateEventScreenState extends State<CreateEventScreen> {
         requireGender: _requireGender,
         requirePersonalNumber: _requirePersonalNumber,
         requireGuardianNumber: _requireGuardianNumber,
+        allowReviews: _allowReviews,
       );
 
       print('Creating event in Firestore: ${event.id}');
@@ -644,6 +651,15 @@ class _CreateEventScreenState extends State<CreateEventScreen> {
               ),
               const SizedBox(height: 16),
               
+              // Host Name (Optional)
+              CustomTextField(
+                controller: _hostNameController,
+                label: 'Host Name (Optional)',
+                icon: Icons.business,
+                hint: 'e.g., BAUST CSE Department, Student Club, etc.',
+              ),
+              const SizedBox(height: 16),
+              
               // Category Dropdown
               DropdownButtonFormField<String>(
                 value: _selectedCategory,
@@ -666,6 +682,12 @@ class _CreateEventScreenState extends State<CreateEventScreen> {
                 }).toList(),
                 onChanged: (value) {
                   setState(() => _selectedCategory = value!);
+                },
+                validator: (value) {
+                  if (value == null || value.isEmpty) {
+                    return 'Please select a category';
+                  }
+                  return null;
                 },
               ),
               const SizedBox(height: 16),
@@ -888,6 +910,14 @@ class _CreateEventScreenState extends State<CreateEventScreen> {
                 subtitle: const Text('Participants must provide their guardian contact number'),
                 value: _requireGuardianNumber,
                 onChanged: (value) => setState(() => _requireGuardianNumber = value ?? false),
+                controlAffinity: ListTileControlAffinity.leading,
+              ),
+              const SizedBox(height: 16),
+              CheckboxListTile(
+                title: const Text('Allow Reviews/Feedback'),
+                subtitle: const Text('Participants can leave reviews after the event is completed'),
+                value: _allowReviews,
+                onChanged: (value) => setState(() => _allowReviews = value ?? false),
                 controlAffinity: ListTileControlAffinity.leading,
               ),
               const SizedBox(height: 32),

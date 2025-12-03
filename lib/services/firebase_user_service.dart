@@ -3,6 +3,7 @@ import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_auth/firebase_auth.dart' hide User show FirebaseAuthException, FirebaseAuth, EmailAuthProvider;
 import '../models/user.dart';
 import '../firebase_options.dart';
+import '../utils/data_cache.dart';
 
 class FirebaseUserService {
   static final FirebaseFirestore _firestore = FirebaseFirestore.instance;
@@ -77,9 +78,16 @@ class FirebaseUserService {
     }
   }
 
-  // Get user by ID from Firestore
+  // Get user by ID from Firestore (with caching)
   static Future<User?> getUserById(String userId) async {
     try {
+      // Check cache first
+      final cache = DataCache();
+      final cachedUser = cache.getUser(userId);
+      if (cachedUser != null) {
+        return cachedUser;
+      }
+      
       // Ensure Firebase is initialized
       if (Firebase.apps.isEmpty) {
         print('Firebase not initialized in getUserById, initializing now...');
@@ -91,7 +99,7 @@ class FirebaseUserService {
       final doc = await _usersCol.doc(userId).get();
       if (doc.exists) {
         final data = doc.data()!;
-        return User(
+        final user = User(
           id: doc.id,
           email: (data['email'] as String?) ?? '',
           name: (data['name'] as String?) ?? '',
@@ -101,6 +109,10 @@ class FirebaseUserService {
           createdAt: _parseDateAny(data['createdAt']) ?? DateTime.now(),
           lastLoginAt: _parseDateAny(data['lastLoginAt']),
         );
+        
+        // Cache the user
+        cache.cacheUser(user);
+        return user;
       }
       return null;
     } catch (e) {
@@ -470,57 +482,193 @@ class FirebaseUserService {
   }
 
   // Firestore-backed operations
-  static Future<List<User>> getAllUsers() async {
-    final snap = await _usersCol.get();
-    return snap.docs.map((d) {
-      final data = d.data();
-      return User(
-        id: d.id,
-        email: (data['email'] as String?) ?? '',
-        name: (data['name'] as String?) ?? '',
-        universityId: (data['universityId'] as String?) ?? '',
-        type: _parseUserTypeAny(data['type'] ?? 'participant'),
-        profileImageUrl: data['profileImageUrl'] as String?,
-        createdAt: _parseDateAny(data['createdAt']) ?? DateTime.now(),
-        lastLoginAt: _parseDateAny(data['lastLoginAt']),
-      );
-    }).toList();
+  // Get all users with pagination support (for better performance with 500+ users)
+  static Future<List<User>> getAllUsers({int? limit, DocumentSnapshot? startAfter}) async {
+    try {
+      // Check cache if loading first page without pagination
+      if (limit == null && startAfter == null) {
+        final cache = DataCache();
+        final cachedUsers = cache.getAllUsers();
+        if (cachedUsers != null) {
+          return cachedUsers;
+        }
+      }
+      
+      Query<Map<String, dynamic>> query = _usersCol;
+      
+      // Apply pagination if provided
+      if (limit != null) {
+        query = query.limit(limit);
+      }
+      
+      if (startAfter != null) {
+        query = query.startAfterDocument(startAfter);
+      }
+      
+      final snap = await query.get();
+      final users = snap.docs.map((d) {
+        final data = d.data();
+        return User(
+          id: d.id,
+          email: (data['email'] as String?) ?? '',
+          name: (data['name'] as String?) ?? '',
+          universityId: (data['universityId'] as String?) ?? '',
+          type: _parseUserTypeAny(data['type'] ?? 'participant'),
+          profileImageUrl: data['profileImageUrl'] as String?,
+          createdAt: _parseDateAny(data['createdAt']) ?? DateTime.now(),
+          lastLoginAt: _parseDateAny(data['lastLoginAt']),
+        );
+      }).toList();
+      
+      // Cache users if loading first page
+      if (limit == null && startAfter == null) {
+        final cache = DataCache();
+        cache.cacheAllUsers(users);
+      } else {
+        // Cache individual users
+        final cache = DataCache();
+        cache.cacheUsers(users);
+      }
+      
+      return users;
+    } catch (e) {
+      print('Error getting users: $e');
+      return [];
+    }
+  }
+  
+  // Get all users (backward compatibility - loads in chunks for performance)
+  static Future<List<User>> getAllUsersFull() async {
+    // Check cache first
+    final cache = DataCache();
+    final cachedUsers = cache.getAllUsers();
+    if (cachedUsers != null) {
+      return cachedUsers;
+    }
+    
+    final List<User> allUsers = [];
+    const chunkSize = 500; // Load in chunks of 500
+    DocumentSnapshot? lastDoc;
+    
+    while (true) {
+      Query<Map<String, dynamic>> query = _usersCol.limit(chunkSize);
+      if (lastDoc != null) {
+        query = query.startAfterDocument(lastDoc);
+      }
+      
+      final snap = await query.get();
+      if (snap.docs.isEmpty) break;
+      
+      final users = snap.docs.map((d) {
+        final data = d.data();
+        return User(
+          id: d.id,
+          email: (data['email'] as String?) ?? '',
+          name: (data['name'] as String?) ?? '',
+          universityId: (data['universityId'] as String?) ?? '',
+          type: _parseUserTypeAny(data['type'] ?? 'participant'),
+          profileImageUrl: data['profileImageUrl'] as String?,
+          createdAt: _parseDateAny(data['createdAt']) ?? DateTime.now(),
+          lastLoginAt: _parseDateAny(data['lastLoginAt']),
+        );
+      }).toList();
+      
+      allUsers.addAll(users);
+      
+      if (snap.docs.length < chunkSize) break; // Last chunk
+      
+      lastDoc = snap.docs.last;
+    }
+    
+    // Cache all users
+    cache.cacheAllUsers(allUsers);
+    
+    return allUsers;
   }
 
   // Get users by IDs in batches (Firestore limit is 10 per whereIn query)
+  // Optimized for 500+ users with parallel batch loading and caching
   static Future<List<User>> getUsersByIds(List<String> userIds) async {
     if (userIds.isEmpty) return [];
     
+    final cache = DataCache();
     final List<User> users = [];
+    final List<String> uncachedIds = [];
+    
+    // Check cache first
+    for (var userId in userIds) {
+      final cachedUser = cache.getUser(userId);
+      if (cachedUser != null) {
+        users.add(cachedUser);
+      } else {
+        uncachedIds.add(userId);
+      }
+    }
+    
+    // If all users are cached, return immediately
+    if (uncachedIds.isEmpty) {
+      return users;
+    }
+    
     const batchSize = 10; // Firestore whereIn limit
     
-    // Process in batches
-    for (int i = 0; i < userIds.length; i += batchSize) {
-      final batch = userIds.skip(i).take(batchSize).toList();
+    // For large lists (100+), process batches in parallel for better performance
+    if (uncachedIds.length > 100) {
+      // Process batches in parallel (up to 5 concurrent batches)
+      final batches = <List<String>>[];
+      for (int i = 0; i < uncachedIds.length; i += batchSize) {
+        batches.add(uncachedIds.skip(i).take(batchSize).toList());
+      }
       
-      try {
-        // Use whereIn for batches of 10
-        final snap = await _usersCol.where(FieldPath.documentId, whereIn: batch).get();
-        for (var doc in snap.docs) {
-          final data = doc.data();
-          users.add(User(
-            id: doc.id,
-            email: (data['email'] as String?) ?? '',
-            name: (data['name'] as String?) ?? '',
-            universityId: (data['universityId'] as String?) ?? '',
-            type: _parseUserTypeAny(data['type'] ?? 'participant'),
-            profileImageUrl: data['profileImageUrl'] as String?,
-            createdAt: _parseDateAny(data['createdAt']) ?? DateTime.now(),
-            lastLoginAt: _parseDateAny(data['lastLoginAt']),
-          ));
+      // Process up to 5 batches in parallel
+      const maxConcurrent = 5;
+      for (int i = 0; i < batches.length; i += maxConcurrent) {
+        final batchGroup = batches.skip(i).take(maxConcurrent).toList();
+        final results = await Future.wait(
+          batchGroup.map((batch) => _loadUserBatch(batch)),
+        );
+        
+        for (var batchUsers in results) {
+          users.addAll(batchUsers);
+          // Cache the loaded users
+          cache.cacheUsers(batchUsers);
         }
-      } catch (e) {
-        print('Error loading user batch: $e');
-        // Continue with next batch even if one fails
+      }
+    } else {
+      // For smaller lists, process sequentially
+      for (int i = 0; i < uncachedIds.length; i += batchSize) {
+        final batch = uncachedIds.skip(i).take(batchSize).toList();
+        final batchUsers = await _loadUserBatch(batch);
+        users.addAll(batchUsers);
+        // Cache the loaded users
+        cache.cacheUsers(batchUsers);
       }
     }
     
     return users;
+  }
+  
+  // Helper method to load a single batch of users
+  static Future<List<User>> _loadUserBatch(List<String> batch) async {
+    try {
+      final snap = await _usersCol.where(FieldPath.documentId, whereIn: batch).get();
+      return snap.docs.map((doc) {
+        final data = doc.data();
+        return User(
+          id: doc.id,
+          email: (data['email'] as String?) ?? '',
+          name: (data['name'] as String?) ?? '',
+          universityId: (data['universityId'] as String?) ?? '',
+          type: _parseUserTypeAny(data['type'] ?? 'participant'),
+          profileImageUrl: data['profileImageUrl'] as String?,
+          createdAt: _parseDateAny(data['createdAt']) ?? DateTime.now(),
+          lastLoginAt: _parseDateAny(data['lastLoginAt']),
+        );
+      }).toList();
+    } catch (e) {
+      print('Error loading user batch: $e');
+      return []; // Return empty list on error, continue with other batches
+    }
   }
 
   // Create user profile in Firestore

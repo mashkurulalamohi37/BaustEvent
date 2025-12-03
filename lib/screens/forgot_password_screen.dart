@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import '../services/firebase_user_service.dart';
+import '../utils/email_validator.dart';
 
 class ForgotPasswordScreen extends StatefulWidget {
   const ForgotPasswordScreen({super.key});
@@ -190,15 +191,7 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
                                       ),
                                     ),
                                   ),
-                                  validator: (value) {
-                                    if (value == null || value.isEmpty) {
-                                      return 'Please enter your email';
-                                    }
-                                    if (!value.contains('@')) {
-                                      return 'Please enter a valid email';
-                                    }
-                                    return null;
-                                  },
+                                  validator: (value) => EmailValidator.validateEmail(value),
                                 ),
                                 
                                 const SizedBox(height: 24),

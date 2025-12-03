@@ -271,6 +271,7 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
                     _loadNotifications();
                   },
                   child: ListView.builder(
+                    cacheExtent: 500, // Cache more items for smoother scrolling
                     padding: const EdgeInsets.all(16.0),
                     itemCount: _notifications.length,
                     itemBuilder: (context, index) {

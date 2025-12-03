@@ -4,11 +4,26 @@ import 'package:intl/intl.dart';
 import '../models/event.dart';
 import '../services/theme_service.dart';
 
-class AnalyticsScreen extends StatelessWidget {
+enum EventFilterType {
+  all,
+  upcoming,
+  ongoing,
+  past,
+  completed,
+}
+
+class AnalyticsScreen extends StatefulWidget {
   final List<Event> events;
   final bool showTopBar;
 
   const AnalyticsScreen({super.key, required this.events, this.showTopBar = true});
+
+  @override
+  State<AnalyticsScreen> createState() => _AnalyticsScreenState();
+}
+
+class _AnalyticsScreenState extends State<AnalyticsScreen> {
+  EventFilterType _selectedFilter = EventFilterType.upcoming;
 
   @override
   Widget build(BuildContext context) {
@@ -16,41 +31,76 @@ class AnalyticsScreen extends StatelessWidget {
     final now = DateTime.now();
     final today = DateTime(now.year, now.month, now.day);
     
-    final totalEvents = events.length;
-    final completedEvents = events.where((e) => 
+    final totalEvents = widget.events.length;
+    final completedEvents = widget.events.where((e) => 
       e.status == EventStatus.completed || 
       (DateTime(e.date.year, e.date.month, e.date.day).isBefore(today))
     ).toList();
     
-    final upcomingEvents = events.where((e) {
+    final upcomingEvents = widget.events.where((e) {
       final eventDate = DateTime(e.date.year, e.date.month, e.date.day);
       return eventDate.isAfter(today);
     }).toList();
     
-    final ongoingEvents = events.where((e) {
+    final ongoingEvents = widget.events.where((e) {
       final eventDate = DateTime(e.date.year, e.date.month, e.date.day);
       return eventDate.isAtSameMomentAs(today);
     }).toList();
     
+    // Filter events based on selection, but always include ongoing events
+    List<Event> filteredEvents;
+    switch (_selectedFilter) {
+      case EventFilterType.all:
+        filteredEvents = widget.events;
+        break;
+      case EventFilterType.upcoming:
+        filteredEvents = [...upcomingEvents, ...ongoingEvents];
+        break;
+      case EventFilterType.ongoing:
+        filteredEvents = ongoingEvents;
+        break;
+      case EventFilterType.past:
+        filteredEvents = [...completedEvents, ...ongoingEvents];
+        break;
+      case EventFilterType.completed:
+        filteredEvents = [...completedEvents.where((e) => e.status == EventStatus.completed).toList(), ...ongoingEvents];
+        break;
+    }
+    
+    // Remove duplicates (in case ongoing events are included multiple times)
+    filteredEvents = filteredEvents.toSet().toList();
+    
     // Calculate success metrics
-    final totalParticipants = events.fold<int>(0, (sum, e) => sum + e.participants.length);
+    final totalParticipants = widget.events.fold<int>(0, (sum, e) => sum + e.participants.length);
     final avgParticipants = totalEvents > 0 ? (totalParticipants / totalEvents).round() : 0;
     
-    // Success rate: Events with >= 50% participation or completed status
-    final successfulEvents = completedEvents.where((e) {
-      final participationRate = e.maxParticipants > 0 
-          ? (e.participants.length / e.maxParticipants) * 100 
-          : 0;
-      return participationRate >= 50 || e.status == EventStatus.completed;
-    }).length;
+    // Success rate: Based on registered participants vs max participants for each event
+    // Calculate average participation rate across all events
+    double totalParticipationRate = 0;
+    int eventsWithMaxParticipants = 0;
+    int successfulEvents = 0; // Events with >= 50% participation
     
-    final successRate = totalEvents > 0 
-        ? ((successfulEvents / totalEvents) * 100).round() 
+    for (var event in widget.events) {
+      if (event.maxParticipants > 0) {
+        final participationRate = (event.participants.length / event.maxParticipants) * 100;
+        totalParticipationRate += participationRate;
+        eventsWithMaxParticipants++;
+        
+        // Count as successful if >= 50% registered
+        if (participationRate >= 50) {
+          successfulEvents++;
+        }
+      }
+    }
+    
+    // Calculate overall success rate as average participation rate
+    final successRate = eventsWithMaxParticipants > 0
+        ? (totalParticipationRate / eventsWithMaxParticipants).round()
         : 0;
     
     // Category distribution
     final categoryCounts = <String, int>{};
-    for (var event in events) {
+    for (var event in widget.events) {
       categoryCounts[event.category] = (categoryCounts[event.category] ?? 0) + 1;
     }
     
@@ -62,7 +112,7 @@ class AnalyticsScreen extends StatelessWidget {
       monthlyData[monthKey] = 0;
     }
     
-    for (var event in events) {
+    for (var event in widget.events) {
       final monthKey = DateFormat('MMM yyyy').format(event.date);
       if (monthlyData.containsKey(monthKey)) {
         monthlyData[monthKey] = (monthlyData[monthKey] ?? 0) + 1;
@@ -91,9 +141,10 @@ class AnalyticsScreen extends StatelessWidget {
             completedEvents,
             upcomingEvents,
             ongoingEvents,
-            events,
+            widget.events,
             monthlyData,
             categoryCounts,
+            filteredEvents,
           );
         },
       );
@@ -114,9 +165,10 @@ class AnalyticsScreen extends StatelessWidget {
           completedEvents,
           upcomingEvents,
           ongoingEvents,
-          events,
+          widget.events,
           monthlyData,
           categoryCounts,
+          filteredEvents,
         );
       },
     );
@@ -136,6 +188,7 @@ class AnalyticsScreen extends StatelessWidget {
     List<Event> allEvents,
     Map<String, int> monthlyData,
     Map<String, int> categoryCounts,
+    List<Event> filteredEvents,
   ) {
         // Check if we're in admin dashboard (which forces light mode via Theme widget)
         // Admin dashboard wraps with ThemeService.lightTheme, so if parent is light AND
@@ -144,7 +197,7 @@ class AnalyticsScreen extends StatelessWidget {
         final parentThemeIsLight = Theme.of(context).brightness == Brightness.light;
         // Only force light mode if we're embedded (no top bar) AND parent is light (admin dashboard)
         // Otherwise, use ThemeService value (respects user's dark/light mode choice)
-        final actualIsDark = (!showTopBar && parentThemeIsLight) ? false : isDarkFromService;
+        final actualIsDark = (!widget.showTopBar && parentThemeIsLight) ? false : isDarkFromService;
         // Force dark mode colors when dark mode is active
         final cardColor = actualIsDark ? const Color(0xFF1E1E1E) : Colors.white;
         final textColor = actualIsDark ? Colors.white : Colors.black;
@@ -157,7 +210,7 @@ class AnalyticsScreen extends StatelessWidget {
           child: Column(
             children: [
               // Top Bar - Only show if showTopBar is true
-              if (showTopBar)
+              if (widget.showTopBar)
                 Container(
                   height: kToolbarHeight + MediaQuery.of(context).padding.top,
                   padding: EdgeInsets.only(top: MediaQuery.of(context).padding.top),
@@ -248,90 +301,226 @@ class AnalyticsScreen extends StatelessWidget {
               ),
             const SizedBox(height: 24),
             
-            // Success Rate Pie Chart
+            // Per-Event Success Rate - Elegant Design
             Container(
-                  decoration: BoxDecoration(
-                    color: actualIsDark ? const Color(0xFF1E1E1E) : Colors.white,
-                    borderRadius: BorderRadius.circular(12),
-                    boxShadow: [
-                      BoxShadow(
-                        color: Colors.black.withOpacity(0.1),
-                        blurRadius: 4,
-                        offset: const Offset(0, 2),
-                      ),
-                    ],
+              decoration: BoxDecoration(
+                color: actualIsDark ? const Color(0xFF1E1E1E) : Colors.white,
+                borderRadius: BorderRadius.circular(20),
+                border: Border.all(
+                  color: actualIsDark 
+                      ? Colors.grey[800]!.withOpacity(0.3)
+                      : Colors.grey[200]!,
+                  width: 1,
+                ),
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black.withOpacity(actualIsDark ? 0.3 : 0.08),
+                    blurRadius: 12,
+                    offset: const Offset(0, 4),
+                    spreadRadius: 0,
                   ),
-                  child: Padding(
-                    padding: const EdgeInsets.all(16.0),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
+                ],
+              ),
+              child: Padding(
+                padding: const EdgeInsets.all(24.0),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
                       children: [
-                        Text(
-                          'Event Success Rate',
-                          style: TextStyle(
-                            fontSize: 18,
-                            fontWeight: FontWeight.bold,
-                            color: actualIsDark ? Colors.white : Colors.black,
+                        Container(
+                          padding: const EdgeInsets.all(8),
+                          decoration: BoxDecoration(
+                            color: Colors.green.withOpacity(0.1),
+                            borderRadius: BorderRadius.circular(10),
+                          ),
+                          child: Icon(
+                            Icons.trending_up_rounded,
+                            color: Colors.green[600],
+                            size: 20,
                           ),
                         ),
-                    const SizedBox(height: 20),
-                     SizedBox(
-                       height: 200,
-                       child: Row(
-                         crossAxisAlignment: CrossAxisAlignment.center,
-                         children: [
-                           Expanded(
-                             flex: 3,
-                             child: PieChart(
-                              PieChartData(
-                                sections: [
-                                  PieChartSectionData(
-                                    value: successfulEvents.toDouble(),
-                                    title: '$successfulEvents\nSuccessful',
-                                    color: Colors.green,
-                                    radius: 60,
-                                    titleStyle: TextStyle(
-                                      fontSize: 12,
-                                      fontWeight: FontWeight.bold,
-                                      color: actualIsDark ? Colors.white : Colors.black,
-                                    ),
-                                  ),
-                                  PieChartSectionData(
-                                    value: (totalEvents - successfulEvents).toDouble(),
-                                    title: '${totalEvents - successfulEvents}\nOthers',
-                                    color: Colors.grey,
-                                    radius: 60,
-                                    titleStyle: TextStyle(
-                                      fontSize: 12,
-                                      fontWeight: FontWeight.bold,
-                                      color: actualIsDark ? Colors.white : Colors.black,
-                                    ),
-                                  ),
-                                ],
-                                sectionsSpace: 2,
-                                centerSpaceRadius: 40,
-                              ),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: Text(
+                            'Event Success Rate',
+                            style: TextStyle(
+                              fontSize: 20,
+                              fontWeight: FontWeight.w700,
+                              color: actualIsDark ? Colors.white : Colors.black87,
+                              letterSpacing: -0.5,
                             ),
                           ),
-                           Expanded(
-                             flex: 3,
-                             child: Padding(
-                               padding: const EdgeInsets.only(left: 4.0, right: 4.0),
-                               child: Column(
-                                 mainAxisAlignment: MainAxisAlignment.center,
-                                 crossAxisAlignment: CrossAxisAlignment.start,
-                                 mainAxisSize: MainAxisSize.min,
-                                 children: [
-                                   _buildLegendItem(actualIsDark, Colors.green, 'Success', successfulEvents),
-                                   const SizedBox(height: 8),
-                                   _buildLegendItem(actualIsDark, Colors.grey, 'Others', totalEvents - successfulEvents),
-                                 ],
-                               ),
-                             ),
-                           ),
-                        ],
-                      ),
+                        ),
+                        Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 4),
+                          decoration: BoxDecoration(
+                            color: actualIsDark 
+                                ? Colors.grey[800] 
+                                : Colors.grey[100],
+                            borderRadius: BorderRadius.circular(12),
+                            border: Border.all(
+                              color: actualIsDark 
+                                  ? Colors.grey[700]! 
+                                  : Colors.grey[300]!,
+                              width: 1,
+                            ),
+                          ),
+                          child: DropdownButtonHideUnderline(
+                            child: DropdownButton<EventFilterType>(
+                              value: _selectedFilter,
+                              icon: Icon(
+                                Icons.filter_list,
+                                size: 18,
+                                color: actualIsDark ? Colors.white : Colors.black87,
+                              ),
+                              isDense: true,
+                              style: TextStyle(
+                                fontSize: 13,
+                                fontWeight: FontWeight.w600,
+                                color: actualIsDark ? Colors.white : Colors.black87,
+                              ),
+                              dropdownColor: actualIsDark 
+                                  ? Colors.grey[900] 
+                                  : Colors.white,
+                              items: [
+                                DropdownMenuItem(
+                                  value: EventFilterType.all,
+                                  child: Row(
+                                    children: [
+                                      Icon(Icons.event, size: 16, color: Colors.blue),
+                                      const SizedBox(width: 8),
+                                      const Text('All Events'),
+                                    ],
+                                  ),
+                                ),
+                                DropdownMenuItem(
+                                  value: EventFilterType.upcoming,
+                                  child: Row(
+                                    children: [
+                                      Icon(Icons.upcoming, size: 16, color: Colors.blue),
+                                      const SizedBox(width: 8),
+                                      const Text('Upcoming'),
+                                    ],
+                                  ),
+                                ),
+                                DropdownMenuItem(
+                                  value: EventFilterType.ongoing,
+                                  child: Row(
+                                    children: [
+                                      Icon(Icons.event_available, size: 16, color: Colors.green),
+                                      const SizedBox(width: 8),
+                                      const Text('Ongoing'),
+                                    ],
+                                  ),
+                                ),
+                                DropdownMenuItem(
+                                  value: EventFilterType.past,
+                                  child: Row(
+                                    children: [
+                                      Icon(Icons.history, size: 16, color: Colors.orange),
+                                      const SizedBox(width: 8),
+                                      const Text('Past'),
+                                    ],
+                                  ),
+                                ),
+                                DropdownMenuItem(
+                                  value: EventFilterType.completed,
+                                  child: Row(
+                                    children: [
+                                      Icon(Icons.check_circle, size: 16, color: Colors.green),
+                                      const SizedBox(width: 8),
+                                      const Text('Completed'),
+                                    ],
+                                  ),
+                                ),
+                              ],
+                              onChanged: (EventFilterType? newValue) {
+                                if (newValue != null) {
+                                  setState(() {
+                                    _selectedFilter = newValue;
+                                  });
+                                }
+                              },
+                            ),
+                          ),
+                        ),
+                      ],
                     ),
+                    if (ongoingEvents.isNotEmpty) ...[
+                      const SizedBox(height: 12),
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                        decoration: BoxDecoration(
+                          color: Colors.green.withOpacity(0.1),
+                          borderRadius: BorderRadius.circular(8),
+                          border: Border.all(
+                            color: Colors.green.withOpacity(0.3),
+                            width: 1,
+                          ),
+                        ),
+                        child: Row(
+                          children: [
+                            Icon(
+                              Icons.info_outline,
+                              size: 16,
+                              color: Colors.green[700],
+                            ),
+                            const SizedBox(width: 8),
+                            Expanded(
+                              child: Text(
+                                'Ongoing events are always shown',
+                                style: TextStyle(
+                                  fontSize: 12,
+                                  fontWeight: FontWeight.w500,
+                                  color: Colors.green[700],
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+                    const SizedBox(height: 24),
+                    filteredEvents.isEmpty
+                        ? Padding(
+                            padding: const EdgeInsets.all(32.0),
+                            child: Center(
+                              child: Text(
+                                'No events to display',
+                                style: TextStyle(
+                                  fontSize: 14,
+                                  color: actualIsDark 
+                                      ? Colors.grey[400] 
+                                      : Colors.grey[600],
+                                ),
+                              ),
+                            ),
+                          )
+                        : ListView.separated(
+                            shrinkWrap: true,
+                            physics: const NeverScrollableScrollPhysics(),
+                            itemCount: filteredEvents.length,
+                            separatorBuilder: (context, index) => const SizedBox(height: 12),
+                            itemBuilder: (context, index) {
+                              final event = filteredEvents[index];
+                              final isOngoing = ongoingEvents.contains(event);
+                              final registeredCount = event.participants.length;
+                              final maxCount = event.maxParticipants;
+                              final eventSuccessRate = maxCount > 0
+                                  ? ((registeredCount / maxCount) * 100).round()
+                                  : 0;
+                              
+                              return _buildEventSuccessCard(
+                                actualIsDark,
+                                event,
+                                registeredCount,
+                                maxCount,
+                                eventSuccessRate,
+                                isOngoing,
+                              );
+                            },
+                          ),
                   ],
                 ),
               ),
@@ -782,6 +971,213 @@ class AnalyticsScreen extends StatelessWidget {
             ),
           ),
         ],
+    );
+  }
+
+  Widget _buildElegantLegendItem(bool actualIsDark, Color color, String label, int value) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+      decoration: BoxDecoration(
+        color: color.withOpacity(0.1),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(
+          color: color.withOpacity(0.3),
+          width: 1,
+        ),
+      ),
+      child: Row(
+        children: [
+          Container(
+            width: 12,
+            height: 12,
+            decoration: BoxDecoration(
+              color: color,
+              shape: BoxShape.circle,
+              boxShadow: [
+                BoxShadow(
+                  color: color.withOpacity(0.4),
+                  blurRadius: 4,
+                  spreadRadius: 1,
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  label,
+                  style: TextStyle(
+                    fontSize: 13,
+                    fontWeight: FontWeight.w600,
+                    color: actualIsDark ? Colors.white : Colors.black87,
+                  ),
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  '$value event${value != 1 ? 's' : ''}',
+                  style: TextStyle(
+                    fontSize: 11,
+                    fontWeight: FontWeight.w500,
+                    color: actualIsDark 
+                        ? Colors.grey[400] 
+                        : Colors.grey[600],
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildEventSuccessCard(
+    bool actualIsDark,
+    Event event,
+    int registeredCount,
+    int maxCount,
+    int successRate,
+    bool isOngoing,
+  ) {
+    final isHighSuccess = successRate >= 70;
+    final isMediumSuccess = successRate >= 50;
+    final successColor = isHighSuccess
+        ? const Color(0xFF10B981) // Green
+        : isMediumSuccess
+            ? Colors.orange
+            : Colors.red[400]!;
+
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: actualIsDark 
+            ? Colors.grey[900]!.withOpacity(0.5)
+            : Colors.grey[50],
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(
+          color: successColor.withOpacity(0.3),
+          width: 1.5,
+        ),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Expanded(
+                child: Row(
+                  children: [
+                    if (isOngoing)
+                      Container(
+                        margin: const EdgeInsets.only(right: 8),
+                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                        decoration: BoxDecoration(
+                          color: Colors.green.withOpacity(0.2),
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Icon(
+                              Icons.radio_button_checked,
+                              size: 12,
+                              color: Colors.green[700],
+                            ),
+                            const SizedBox(width: 4),
+                            Text(
+                              'Ongoing',
+                              style: TextStyle(
+                                fontSize: 10,
+                                fontWeight: FontWeight.w700,
+                                color: Colors.green[700],
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    Expanded(
+                      child: Text(
+                        event.title,
+                        style: TextStyle(
+                          fontSize: 16,
+                          fontWeight: FontWeight.w700,
+                          color: actualIsDark ? Colors.white : Colors.black87,
+                        ),
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                decoration: BoxDecoration(
+                  color: successColor.withOpacity(0.15),
+                  borderRadius: BorderRadius.circular(20),
+                ),
+                child: Text(
+                  '$successRate%',
+                  style: TextStyle(
+                    fontSize: 14,
+                    fontWeight: FontWeight.w700,
+                    color: successColor,
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          Row(
+            children: [
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Registered',
+                      style: TextStyle(
+                        fontSize: 12,
+                        fontWeight: FontWeight.w500,
+                        color: actualIsDark 
+                            ? Colors.grey[400] 
+                            : Colors.grey[600],
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      '$registeredCount / $maxCount',
+                      style: TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.w700,
+                        color: actualIsDark ? Colors.white : Colors.black87,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(width: 16),
+              Expanded(
+                flex: 2,
+                child: ClipRRect(
+                  borderRadius: BorderRadius.circular(8),
+                  child: LinearProgressIndicator(
+                    value: maxCount > 0 ? registeredCount / maxCount : 0,
+                    backgroundColor: actualIsDark 
+                        ? Colors.grey[800]! 
+                        : Colors.grey[200]!,
+                    valueColor: AlwaysStoppedAnimation<Color>(successColor),
+                    minHeight: 8,
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
     );
   }
 

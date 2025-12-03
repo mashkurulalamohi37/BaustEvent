@@ -2,10 +2,12 @@ import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:uuid/uuid.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:cached_network_image/cached_network_image.dart';
 import 'dart:async';
 import '../models/event.dart';
 import '../models/user.dart';
 import '../models/participant_registration_info.dart';
+import '../models/event_review.dart';
 import '../services/firebase_event_service.dart';
 import '../services/firebase_user_service.dart';
 import '../services/qr_service.dart';
@@ -40,6 +42,9 @@ class _EventDetailsScreenState extends State<EventDetailsScreen> {
   bool _isLoading = false;
   StreamSubscription<DocumentSnapshot>? _eventSubscription;
   StreamSubscription<QuerySnapshot>? _pendingRegistrationsSubscription;
+  List<EventReview> _reviews = [];
+  EventReview? _userReview;
+  bool _isLoadingReviews = false;
 
   @override
   void initState() {
@@ -48,6 +53,10 @@ class _EventDetailsScreenState extends State<EventDetailsScreen> {
     _loadUserData().then((_) {
       // Setup listeners after user data is loaded
       _setupEventListener();
+      // Load reviews if event is completed and allows reviews
+      if (_event.status == EventStatus.completed && _event.allowReviews) {
+        _loadReviews();
+      }
     });
   }
 
@@ -56,6 +65,33 @@ class _EventDetailsScreenState extends State<EventDetailsScreen> {
     _eventSubscription?.cancel();
     _pendingRegistrationsSubscription?.cancel();
     super.dispose();
+  }
+
+  Future<void> _loadReviews() async {
+    if (!_event.allowReviews) return;
+    
+    setState(() => _isLoadingReviews = true);
+    try {
+      final reviews = await FirebaseEventService.getEventReviews(_event.id);
+      EventReview? userReview;
+      
+      if (_currentUser != null) {
+        userReview = await FirebaseEventService.getUserReview(_event.id, _currentUser!.id);
+      }
+      
+      if (mounted) {
+        setState(() {
+          _reviews = reviews;
+          _userReview = userReview;
+          _isLoadingReviews = false;
+        });
+      }
+    } catch (e) {
+      print('Error loading reviews: $e');
+      if (mounted) {
+        setState(() => _isLoadingReviews = false);
+      }
+    }
   }
 
   void _setupEventListener() {
@@ -69,6 +105,9 @@ class _EventDetailsScreenState extends State<EventDetailsScreen> {
       if (snapshot.exists && mounted) {
         try {
           final updatedEvent = EventFirestore.fromFirestore(snapshot);
+          final wasCompleted = _event.isEventDatePassed;
+          final wasReviewsEnabled = _event.allowReviews;
+          
           setState(() {
             _event = updatedEvent;
             // Update registration status
@@ -80,6 +119,11 @@ class _EventDetailsScreenState extends State<EventDetailsScreen> {
               }
             }
           });
+          
+          // Load reviews if event just became completed and allows reviews
+          if (_event.status == EventStatus.completed && _event.allowReviews) {
+            _loadReviews();
+          }
           print('Event updated: participants=${_event.participants.length}, isRegistered=$_isRegistered');
         } catch (e) {
           print('Error parsing event update: $e');
@@ -247,6 +291,18 @@ class _EventDetailsScreenState extends State<EventDetailsScreen> {
   }
 
   Future<void> _toggleRegistration() async {
+    // Prevent registration for completed events
+    if (_event.status == EventStatus.completed) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Cannot register for a completed event.'),
+          backgroundColor: Colors.red,
+          duration: Duration(seconds: 3),
+        ),
+      );
+      return;
+    }
+
     // Prevent guest users from registering
     if (!_isRegistered && _isGuestUser()) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -384,6 +440,19 @@ class _EventDetailsScreenState extends State<EventDetailsScreen> {
     try {
       RegistrationResult result;
       if (_isRegistered) {
+        // Prevent unregistration for paid events
+        if (_event.paymentRequired && _event.paymentAmount != null) {
+          setState(() => _isLoading = false);
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Cannot unregister from paid events. Once registered and payment is made, registration cannot be cancelled.'),
+              backgroundColor: Colors.red,
+              duration: Duration(seconds: 4),
+            ),
+          );
+          return;
+        }
+        
         final success = await FirebaseEventService.unregisterFromEvent(_event.id, userId);
         result = success
             ? const RegistrationResult(RegistrationStatus.success)
@@ -817,10 +886,11 @@ class _EventDetailsScreenState extends State<EventDetailsScreen> {
               child: _event.imageUrl != null
                   ? ClipRRect(
                       borderRadius: BorderRadius.circular(12),
-                      child: Image.network(
-                        _event.imageUrl!,
+                      child: CachedNetworkImage(
+                        imageUrl: _event.imageUrl!,
                         fit: BoxFit.cover,
-                        errorBuilder: (context, error, stackTrace) => _buildImagePlaceholder(),
+                        placeholder: (context, url) => _buildImagePlaceholder(),
+                        errorWidget: (context, url, error) => _buildImagePlaceholder(),
                       ),
                     )
                   : _buildImagePlaceholder(),
@@ -859,6 +929,8 @@ class _EventDetailsScreenState extends State<EventDetailsScreen> {
                 DateFormat('EEEE, MMMM d, y').format(_event.date)),
             _buildDetailRow(Icons.access_time, 'Time', _event.time),
             _buildDetailRow(Icons.location_on, 'Location', _event.location),
+            if (_event.hostName != null && _event.hostName!.isNotEmpty)
+              _buildDetailRow(Icons.business, 'Host', _event.hostName!),
             _buildDetailRow(Icons.category, 'Category', _event.category),
             _buildDetailRow(Icons.people, 'Participants', 
                 '${_event.participants.length}/${_event.maxParticipants}'),
@@ -1010,13 +1082,22 @@ class _EventDetailsScreenState extends State<EventDetailsScreen> {
                 width: double.infinity,
                 height: 56,
                 child: ElevatedButton(
-                  onPressed: (_isLoading || registrationClosed || _isPending) ? null : _toggleRegistration,
+                  onPressed: (_isLoading || registrationClosed || _isPending || 
+                      _event.status == EventStatus.completed ||
+                      (_isRegistered && _event.paymentRequired && _event.paymentAmount != null)) 
+                      ? null : _toggleRegistration,
                   style: ElevatedButton.styleFrom(
-                    backgroundColor: registrationClosed
+                    backgroundColor: _event.status == EventStatus.completed
                         ? Colors.grey
-                        : _isPending
-                            ? Colors.orange
-                            : (_isRegistered ? Colors.red : const Color(0xFF1976D2)),
+                        : (registrationClosed
+                            ? Colors.grey
+                            : _isPending
+                                ? Colors.orange
+                                : (_isRegistered 
+                                    ? (_event.paymentRequired && _event.paymentAmount != null 
+                                        ? Colors.grey 
+                                        : Colors.red)
+                                    : const Color(0xFF1976D2))),
                     shape: RoundedRectangleBorder(
                       borderRadius: BorderRadius.circular(12),
                     ),
@@ -1024,17 +1105,21 @@ class _EventDetailsScreenState extends State<EventDetailsScreen> {
                   child: _isLoading
                       ? const CircularProgressIndicator(color: Colors.white)
                       : Text(
-                          registrationClosed
-                              ? (eventDatePassed 
-                                  ? (_isRegistered ? 'Event Passed' : 'Event Date Passed')
-                                  : (_isRegistered ? 'Registration Locked' : 'Registration Closed'))
-                              : _isPending
-                                  ? 'Pending Approval'
-                                  : (_isRegistered 
-                                      ? 'Unregister' 
-                                      : (_event.paymentRequired && _event.paymentAmount != null
-                                          ? 'Pay & Register'
-                                          : 'Register')),
+                          _event.status == EventStatus.completed
+                              ? 'Event Completed'
+                              : (registrationClosed
+                                  ? (eventDatePassed 
+                                      ? (_isRegistered ? 'Event Passed' : 'Event Date Passed')
+                                      : (_isRegistered ? 'Registration Locked' : 'Registration Closed'))
+                                  : _isPending
+                                      ? 'Pending Approval'
+                                      : (_isRegistered 
+                                          ? (_event.paymentRequired && _event.paymentAmount != null
+                                              ? 'Registered (Cannot Unregister)'
+                                              : 'Unregister')
+                                          : (_event.paymentRequired && _event.paymentAmount != null
+                                              ? 'Pay & Register'
+                                              : 'Register'))),
                           style: const TextStyle(
                             fontSize: 18,
                             fontWeight: FontWeight.w600,
@@ -1043,6 +1128,34 @@ class _EventDetailsScreenState extends State<EventDetailsScreen> {
                         ),
                 ),
               ),
+              if (_isRegistered && _event.paymentRequired && _event.paymentAmount != null)
+                Padding(
+                  padding: const EdgeInsets.only(top: 12.0),
+                  child: Container(
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                      color: Colors.orange.shade50,
+                      borderRadius: BorderRadius.circular(8),
+                      border: Border.all(color: Colors.orange.shade200),
+                    ),
+                    child: Row(
+                      children: [
+                        Icon(Icons.info_outline, size: 18, color: Colors.orange.shade700),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: Text(
+                            'Unregistration is not allowed for paid events once payment is made.',
+                            style: TextStyle(
+                              fontSize: 12,
+                              color: Colors.orange.shade900,
+                              fontWeight: FontWeight.w500,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
               if (registrationClosed)
                 Padding(
                   padding: const EdgeInsets.only(top: 12.0),
@@ -1059,9 +1172,265 @@ class _EventDetailsScreenState extends State<EventDetailsScreen> {
                   ),
                 ),
               const SizedBox(height: 12),
+              
+              // Reviews Section (only for completed events with reviews enabled)
+              if (_event.status == EventStatus.completed && _event.allowReviews) ...[
+                const Divider(height: 32),
+                _buildReviewsSection(),
+              ],
             ],
           ],
         ),
+      ),
+    );
+  }
+
+  Widget _buildReviewsSection() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          children: [
+            Icon(Icons.star, color: Colors.amber, size: 24),
+            const SizedBox(width: 8),
+            Text(
+              'Reviews & Feedback',
+              style: TextStyle(
+                fontSize: 20,
+                fontWeight: FontWeight.bold,
+                color: Theme.of(context).brightness == Brightness.dark 
+                    ? Colors.white 
+                    : Colors.black87,
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 16),
+        
+        // User's review form (if registered and hasn't reviewed yet)
+        if (_isRegistered && _currentUser != null && _userReview == null)
+          _buildReviewForm(),
+        
+        // Message if user is not registered
+        if (!_isRegistered && _currentUser != null)
+          Container(
+            padding: const EdgeInsets.all(16),
+            decoration: BoxDecoration(
+              color: Colors.orange.shade50,
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(color: Colors.orange.shade200),
+            ),
+            child: Row(
+              children: [
+                Icon(Icons.info_outline, size: 18, color: Colors.orange.shade700),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    'You must be registered for this event to leave a review.',
+                    style: TextStyle(
+                      fontSize: 12,
+                      color: Colors.orange.shade900,
+                      fontWeight: FontWeight.w500,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        
+        // User's existing review (if already reviewed)
+        if (_userReview != null)
+          _buildUserReviewCard(_userReview!),
+        
+        const SizedBox(height: 16),
+        
+        // All reviews list
+        if (_isLoadingReviews)
+          const Center(child: CircularProgressIndicator())
+        else if (_reviews.isEmpty)
+          Center(
+            child: Padding(
+              padding: const EdgeInsets.all(32.0),
+              child: Text(
+                'No reviews yet. Be the first to review this event!',
+                style: TextStyle(
+                  fontSize: 14,
+                  color: Colors.grey[600],
+                ),
+                textAlign: TextAlign.center,
+              ),
+            ),
+          )
+        else
+          Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                'All Reviews (${_reviews.length})',
+                style: TextStyle(
+                  fontSize: 16,
+                  fontWeight: FontWeight.w600,
+                  color: Theme.of(context).brightness == Brightness.dark 
+                      ? Colors.white 
+                      : Colors.black87,
+                ),
+              ),
+              const SizedBox(height: 12),
+              ..._reviews.map((review) => Padding(
+                padding: const EdgeInsets.only(bottom: 12),
+                child: _buildReviewCard(review),
+              )),
+            ],
+          ),
+      ],
+    );
+  }
+
+  Widget _buildReviewForm() {
+    return _ReviewFormWidget(
+      event: _event,
+      currentUser: _currentUser!,
+      onReviewSubmitted: () => _loadReviews(),
+    );
+  }
+
+  Widget _buildUserReviewCard(EventReview review) {
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: Colors.blue.shade50,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: Colors.blue.shade200),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Text(
+                'Your Review',
+                style: TextStyle(
+                  fontSize: 16,
+                  fontWeight: FontWeight.bold,
+                  color: Colors.blue.shade900,
+                ),
+              ),
+              const Spacer(),
+              Row(
+                children: List.generate(5, (index) {
+                  return Icon(
+                    index < review.rating ? Icons.star : Icons.star_border,
+                    color: Colors.amber,
+                    size: 20,
+                  );
+                }),
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          Text(
+            review.comment,
+            style: TextStyle(
+              fontSize: 14,
+              color: Colors.blue.shade900,
+            ),
+          ),
+          const SizedBox(height: 8),
+          Text(
+            'Reviewed on ${DateFormat('MMM d, y').format(review.createdAt)}',
+            style: TextStyle(
+              fontSize: 12,
+              color: Colors.blue.shade700,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildReviewCard(EventReview review) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: isDark ? Colors.grey[900] : Colors.white,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(
+          color: isDark ? Colors.grey[800]! : Colors.grey[300]!,
+        ),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.05),
+            blurRadius: 4,
+            offset: const Offset(0, 2),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              CircleAvatar(
+                radius: 20,
+                backgroundColor: Colors.blue.shade100,
+                child: Text(
+                  review.userName.isNotEmpty 
+                      ? review.userName[0].toUpperCase() 
+                      : 'U',
+                  style: TextStyle(
+                    color: Colors.blue.shade900,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      review.userName,
+                      style: TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.bold,
+                        color: isDark ? Colors.white : Colors.black87,
+                      ),
+                    ),
+                    Text(
+                      DateFormat('MMM d, y').format(review.createdAt),
+                      style: TextStyle(
+                        fontSize: 12,
+                        color: Colors.grey[600],
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              Row(
+                children: List.generate(5, (index) {
+                  return Icon(
+                    index < review.rating ? Icons.star : Icons.star_border,
+                    color: Colors.amber,
+                    size: 20,
+                  );
+                }),
+              ),
+            ],
+          ),
+          if (review.comment.isNotEmpty) ...[
+            const SizedBox(height: 12),
+            Text(
+              review.comment,
+              style: TextStyle(
+                fontSize: 14,
+                color: isDark ? Colors.white : Colors.black87,
+                height: 1.5,
+              ),
+            ),
+          ],
+        ],
       ),
     );
   }
@@ -1113,7 +1482,7 @@ class _EventDetailsScreenState extends State<EventDetailsScreen> {
       case EventStatus.active:
         return Colors.green;
       case EventStatus.completed:
-        return Colors.orange;
+        return Colors.purple;
       case EventStatus.cancelled:
         return Colors.red;
     }
@@ -1133,5 +1502,202 @@ class _EventDetailsScreenState extends State<EventDetailsScreen> {
         return 'Cancelled';
     }
   }
+}
 
+class _ReviewFormWidget extends StatefulWidget {
+  final Event event;
+  final User currentUser;
+  final VoidCallback onReviewSubmitted;
+
+  const _ReviewFormWidget({
+    required this.event,
+    required this.currentUser,
+    required this.onReviewSubmitted,
+  });
+
+  @override
+  State<_ReviewFormWidget> createState() => _ReviewFormWidgetState();
+}
+
+class _ReviewFormWidgetState extends State<_ReviewFormWidget> {
+  final _ratingController = ValueNotifier<int>(5);
+  final _commentController = TextEditingController();
+  final _formKey = GlobalKey<FormState>();
+  bool _isSubmitting = false;
+
+  @override
+  void dispose() {
+    _ratingController.dispose();
+    _commentController.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: Theme.of(context).brightness == Brightness.dark 
+            ? Colors.grey[900] 
+            : Colors.grey[50],
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(
+          color: Colors.grey[300]!,
+        ),
+      ),
+      child: Form(
+        key: _formKey,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              'Write a Review',
+              style: TextStyle(
+                fontSize: 18,
+                fontWeight: FontWeight.bold,
+                color: Theme.of(context).brightness == Brightness.dark 
+                    ? Colors.white 
+                    : Colors.black87,
+              ),
+            ),
+            const SizedBox(height: 12),
+            Text(
+              'Rating',
+              style: TextStyle(
+                fontSize: 14,
+                fontWeight: FontWeight.w600,
+                color: Theme.of(context).brightness == Brightness.dark 
+                    ? Colors.white 
+                    : Colors.black87,
+              ),
+            ),
+            const SizedBox(height: 8),
+            ValueListenableBuilder<int>(
+              valueListenable: _ratingController,
+              builder: (context, rating, _) {
+                return Row(
+                  children: List.generate(5, (index) {
+                    return GestureDetector(
+                      onTap: () => _ratingController.value = index + 1,
+                      child: Icon(
+                        index < rating ? Icons.star : Icons.star_border,
+                        color: Colors.amber,
+                        size: 32,
+                      ),
+                    );
+                  }),
+                );
+              },
+            ),
+            const SizedBox(height: 16),
+            TextFormField(
+              controller: _commentController,
+              maxLines: 4,
+              decoration: InputDecoration(
+                labelText: 'Your Review',
+                hintText: 'Share your experience...',
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                focusedBorder: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(12),
+                  borderSide: const BorderSide(color: Color(0xFF1976D2), width: 2),
+                ),
+              ),
+              validator: (value) {
+                if (value == null || value.trim().isEmpty) {
+                  return 'Please write a review';
+                }
+                return null;
+              },
+            ),
+            const SizedBox(height: 16),
+            SizedBox(
+              width: double.infinity,
+              child: ElevatedButton(
+                onPressed: _isSubmitting ? null : () async {
+                  if (!_formKey.currentState!.validate()) return;
+                  
+                  setState(() => _isSubmitting = true);
+                  
+                  try {
+                    final review = EventReview(
+                      id: '${widget.event.id}_${widget.currentUser.id}',
+                      eventId: widget.event.id,
+                      userId: widget.currentUser.id,
+                      userName: widget.currentUser.name,
+                      userEmail: widget.currentUser.email,
+                      rating: _ratingController.value,
+                      comment: _commentController.text.trim(),
+                      createdAt: DateTime.now(),
+                    );
+                    
+                    print('Submitting review for event ${widget.event.id} by user ${widget.currentUser.id}');
+                    final success = await FirebaseEventService.submitReview(review);
+                    
+                    if (mounted) {
+                      setState(() => _isSubmitting = false);
+                      
+                      if (success) {
+                        _commentController.clear();
+                        _ratingController.value = 5;
+                        widget.onReviewSubmitted();
+                        if (mounted) {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            const SnackBar(
+                              content: Text('Review submitted successfully!'),
+                              backgroundColor: Colors.green,
+                            ),
+                          );
+                        }
+                      } else {
+                        if (mounted) {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            const SnackBar(
+                              content: Text('Failed to submit review. Please make sure you are registered for this event.'),
+                              backgroundColor: Colors.red,
+                              duration: Duration(seconds: 4),
+                            ),
+                          );
+                        }
+                      }
+                    }
+                  } catch (e) {
+                    print('Exception submitting review: $e');
+                    if (mounted) {
+                      setState(() => _isSubmitting = false);
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        SnackBar(
+                          content: Text('Error: ${e.toString()}'),
+                          backgroundColor: Colors.red,
+                          duration: const Duration(seconds: 4),
+                        ),
+                      );
+                    }
+                  }
+                },
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: const Color(0xFF1976D2),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  padding: const EdgeInsets.symmetric(vertical: 16),
+                ),
+                child: _isSubmitting
+                    ? const CircularProgressIndicator(color: Colors.white)
+                    : const Text(
+                        'Submit Review',
+                        style: TextStyle(
+                          fontSize: 16,
+                          fontWeight: FontWeight.w600,
+                          color: Colors.white,
+                        ),
+                      ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
 }

@@ -2,6 +2,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:firebase_core/firebase_core.dart';
+import 'package:firebase_auth/firebase_auth.dart' as firebase_auth;
 import 'package:flutter/foundation.dart';
 import 'firebase_options.dart';
 import 'screens/welcome_screen.dart';
@@ -204,42 +205,137 @@ class _AuthWrapperState extends State<AuthWrapper> {
 
   Future<void> _checkAuthState() async {
     try {
-      // Check if user is already logged in with timeout to prevent hanging
-      final user = await FirebaseUserService.getCurrentUserWithDetails()
-          .timeout(
-            const Duration(seconds: 5), // Reduced timeout
-            onTimeout: () {
-              print('Auth check timed out - proceeding without user');
-              return null;
-            },
-          );
-      if (mounted) {
-        setState(() {
-          _currentUser = user;
-          _isLoading = false;
-        });
+      final firebaseAuth = firebase_auth.FirebaseAuth.instance;
+      
+      // Wait for the first auth state change event to ensure Firebase Auth has restored the session
+      // This is important because on app restart, Firebase Auth needs time to restore from local storage
+      try {
+        // Wait for auth state to be ready (first event from stream)
+        // Use timeout to fallback to direct check if stream doesn't fire quickly
+        firebase_auth.User? firebaseUser;
+        try {
+          firebaseUser = await firebaseAuth.authStateChanges()
+              .timeout(const Duration(seconds: 3))
+              .first;
+        } catch (e) {
+          // If stream times out or doesn't fire, check currentUser directly
+          // This handles cases where session is already restored
+          print('Auth state stream timeout, checking currentUser directly: $e');
+          firebaseUser = firebaseAuth.currentUser;
+        }
+        
+        if (!mounted) return;
+        
+        if (firebaseUser == null) {
+          // No Firebase Auth user - user is logged out
+          setState(() {
+            _currentUser = null;
+            _isLoading = false;
+          });
+          return;
+        }
+        
+        // User exists in Firebase Auth - get full details from Firestore
+        try {
+          final user = await FirebaseUserService.getCurrentUserWithDetails()
+              .timeout(
+                const Duration(seconds: 10),
+                onTimeout: () {
+                  print('Auth check timed out - but user is authenticated, keeping session');
+                  // Return a basic user object to maintain session
+                  return User(
+                    id: firebaseUser!.uid,
+                    email: firebaseUser.email ?? '',
+                    name: 'Loading...',
+                    universityId: '',
+                    type: UserType.participant,
+                    createdAt: DateTime.now(),
+                  );
+                },
+              );
+          
+          if (mounted) {
+            setState(() {
+              _currentUser = user;
+              _isLoading = false;
+            });
+          }
+        } catch (e) {
+          print('Error fetching user details, but user is authenticated: $e');
+          // User is authenticated in Firebase Auth, but couldn't fetch details
+          // Keep them logged in with basic info
+          if (mounted) {
+            setState(() {
+              _currentUser = User(
+                id: firebaseUser!.uid,
+                email: firebaseUser.email ?? '',
+                name: 'Loading...',
+                universityId: '',
+                type: UserType.participant,
+                createdAt: DateTime.now(),
+              );
+              _isLoading = false;
+            });
+          }
+        }
+      } catch (e) {
+        print('Error waiting for auth state: $e');
+        // Fallback to direct check
+        _fallbackAuthCheck();
       }
     } catch (e) {
-      print('Error checking auth state: $e');
-      if (mounted) {
-        setState(() {
-          _isLoading = false;
-          _currentUser = null; // Ensure we proceed to welcome screen
-        });
-      }
+      print('Error setting up auth state check: $e');
+      _fallbackAuthCheck();
     }
-    
-    // Safety fallback - if still loading after 6 seconds, force proceed
-    _timeoutTimer?.cancel(); // Cancel any existing timer
-    _timeoutTimer = Timer(const Duration(seconds: 6), () {
-      if (mounted && _isLoading) {
-        print('Force proceeding after timeout');
+  }
+  
+  void _fallbackAuthCheck() {
+    try {
+      final firebaseAuth = firebase_auth.FirebaseAuth.instance;
+      final firebaseUser = firebaseAuth.currentUser;
+      
+      if (mounted) {
+        if (firebaseUser != null) {
+          // User is authenticated - keep them logged in
+          setState(() {
+            _currentUser = User(
+              id: firebaseUser.uid,
+              email: firebaseUser.email ?? '',
+              name: 'Loading...',
+              universityId: '',
+              type: UserType.participant,
+              createdAt: DateTime.now(),
+            );
+            _isLoading = false;
+          });
+          
+          // Try to get full user details in background
+          FirebaseUserService.getCurrentUserWithDetails().then((user) {
+            if (mounted && user != null) {
+              setState(() {
+                _currentUser = user;
+              });
+            }
+          }).catchError((e) {
+            print('Error fetching user details in background: $e');
+          });
+        } else {
+          // No user in Firebase Auth
+          setState(() {
+            _isLoading = false;
+            _currentUser = null;
+          });
+        }
+      }
+    } catch (e) {
+      print('Error in fallback auth check: $e');
+      if (mounted) {
         setState(() {
           _isLoading = false;
           _currentUser = null;
         });
       }
-    });
+    }
   }
 
   @override

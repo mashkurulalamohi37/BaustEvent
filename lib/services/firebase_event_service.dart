@@ -1,6 +1,8 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import '../models/event.dart';
 import '../models/participant_registration_info.dart';
+import '../models/event_review.dart';
+import '../utils/data_cache.dart';
 import 'firebase_notification_service.dart';
 
 enum RegistrationStatus {
@@ -32,6 +34,13 @@ class FirebaseEventService {
   // Queries
   static Future<List<Event>> getAllEvents() async {
     try {
+      // Check cache first
+      final cache = DataCache();
+      final cachedEvents = cache.getAllEvents();
+      if (cachedEvents != null) {
+        return cachedEvents;
+      }
+
       // Fetch all events without orderBy to include events without createdAt field
       final snap = await _eventsCol.get();
       // Filter out deleted documents
@@ -42,6 +51,10 @@ class FirebaseEventService {
       // Sort by createdAt descending (newest first)
       // Events without createdAt will use event date as fallback from fromFirestore
       events.sort((a, b) => b.createdAt.compareTo(a.createdAt));
+      
+      // Cache events
+      cache.cacheAllEvents(events);
+      
       return events;
     } catch (e) {
       print('Error fetching all events: $e');
@@ -374,6 +387,11 @@ class FirebaseEventService {
           return RegistrationStatus.eventNotFound;
         }
         final event = EventFirestore.fromFirestore(snap);
+        // Check if event is completed - participants cannot register for completed events
+        if (event.status == EventStatus.completed) {
+          print('registerForEvent: Event $eventId is completed');
+          return RegistrationStatus.registrationClosed;
+        }
         // Check if event date has passed - participants cannot register for past events
         if (event.isEventDatePassed) {
           print('registerForEvent: Event $eventId date has passed (${event.date})');
@@ -550,17 +568,42 @@ class FirebaseEventService {
   }
 
   // Get all participant registration info for an event
+  // Optimized for large events (500+ participants) with pagination
   static Future<List<ParticipantRegistrationInfo>> getEventParticipantInfo(
     String eventId,
   ) async {
     try {
-      final snapshot = await _firestore
-          .collection('event_participants')
-          .where('eventId', isEqualTo: eventId)
-          .get();
-      return snapshot.docs
-          .map((doc) => ParticipantRegistrationInfo.fromFirestore(doc.data()))
-          .toList();
+      // For large events, use pagination to load in chunks
+      final List<ParticipantRegistrationInfo> allInfo = [];
+      const chunkSize = 500;
+      DocumentSnapshot? lastDoc;
+      
+      while (true) {
+        Query<Map<String, dynamic>> query = _firestore
+            .collection('event_participants')
+            .where('eventId', isEqualTo: eventId)
+            .limit(chunkSize);
+        
+        if (lastDoc != null) {
+          query = query.startAfterDocument(lastDoc);
+        }
+        
+        final snapshot = await query.get();
+        
+        if (snapshot.docs.isEmpty) break;
+        
+        final chunk = snapshot.docs
+            .map((doc) => ParticipantRegistrationInfo.fromFirestore(doc.data()))
+            .toList();
+        
+        allInfo.addAll(chunk);
+        
+        if (snapshot.docs.length < chunkSize) break; // Last chunk
+        
+        lastDoc = snapshot.docs.last;
+      }
+      
+      return allInfo;
     } catch (e) {
       print('Error getting event participant info: $e');
       return [];
@@ -792,6 +835,120 @@ class FirebaseEventService {
       );
     } catch (e) {
       print('Error in _notifyNewEvent: $e');
+    }
+  }
+
+  // Review/Feedback methods
+  static CollectionReference<Map<String, dynamic>> get _reviewsCol =>
+      _firestore.collection('event_reviews');
+
+  // Submit a review for an event
+  static Future<bool> submitReview(EventReview review) async {
+    try {
+      // Verify the event exists and is completed
+      final eventDoc = await _eventsCol.doc(review.eventId).get();
+      if (!eventDoc.exists) {
+        print('Error submitting review: Event ${review.eventId} does not exist');
+        return false;
+      }
+      
+      final event = EventFirestore.fromFirestore(eventDoc);
+      if (event.status != EventStatus.completed) {
+        print('Error submitting review: Event ${review.eventId} is not completed');
+        return false;
+      }
+      
+      if (!event.allowReviews) {
+        print('Error submitting review: Event ${review.eventId} does not allow reviews');
+        return false;
+      }
+      
+      // Verify user is registered for the event
+      if (!event.participants.contains(review.userId)) {
+        print('Error submitting review: User ${review.userId} is not registered for event ${review.eventId}');
+        return false;
+      }
+      
+      final docId = '${review.eventId}_${review.userId}';
+      await _reviewsCol.doc(docId).set(review.toFirestore());
+      print('Review submitted successfully: $docId');
+      return true;
+    } catch (e) {
+      print('Error submitting review: $e');
+      return false;
+    }
+  }
+
+  // Get all reviews for an event
+  static Future<List<EventReview>> getEventReviews(String eventId) async {
+    try {
+      // First try with orderBy, if it fails (no index), try without
+      try {
+        final snapshot = await _reviewsCol
+            .where('eventId', isEqualTo: eventId)
+            .orderBy('createdAt', descending: true)
+            .get();
+        
+        final reviews = snapshot.docs
+            .map((doc) => EventReview.fromFirestore(doc.id, doc.data()))
+            .toList();
+        return reviews;
+      } catch (e) {
+        // If orderBy fails (likely missing index), try without orderBy
+        print('OrderBy failed, trying without: $e');
+        final snapshot = await _reviewsCol
+            .where('eventId', isEqualTo: eventId)
+            .get();
+        
+        final reviews = snapshot.docs
+            .map((doc) => EventReview.fromFirestore(doc.id, doc.data()))
+            .toList();
+        // Sort manually by createdAt
+        reviews.sort((a, b) => b.createdAt.compareTo(a.createdAt));
+        return reviews;
+      }
+    } catch (e) {
+      print('Error getting event reviews: $e');
+      return [];
+    }
+  }
+
+  // Get user's review for an event
+  static Future<EventReview?> getUserReview(String eventId, String userId) async {
+    try {
+      final docId = '${eventId}_${userId}';
+      final doc = await _reviewsCol.doc(docId).get();
+      
+      if (!doc.exists) return null;
+      
+      return EventReview.fromFirestore(doc.id, doc.data() as Map<String, dynamic>);
+    } catch (e) {
+      print('Error getting user review: $e');
+      return null;
+    }
+  }
+
+  // Update a review
+  static Future<bool> updateReview(EventReview review) async {
+    try {
+      final docId = '${review.eventId}_${review.userId}';
+      await _reviewsCol.doc(docId).update(review.toFirestore());
+      return true;
+    } catch (e) {
+      print('Error updating review: $e');
+      return false;
+    }
+  }
+
+  // Delete a review
+  static Future<bool> deleteReview(String eventId, String userId) async {
+    try {
+      final docId = '${eventId}_${userId}';
+      await _reviewsCol.doc(docId).delete();
+      return true;
+    } catch (e) {
+      print('Error deleting review: $e');
+      return false;
     }
   }
 }
