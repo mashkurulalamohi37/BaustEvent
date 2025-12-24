@@ -1,0 +1,64 @@
+// ============================================
+// EXPENSE TRACKER FIRESTORE SECURITY RULES
+// ============================================
+// Add these rules to your firestore.rules file
+
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    
+    // Helper function to check if user is authenticated
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+    
+    // Helper function to check if user is admin
+    function isAdmin() {
+      return isAuthenticated() && 
+             exists(/databases/$(database)/documents/users/$(request.auth.uid)) &&
+             get(/databases/$(database)/documents/users/$(request.auth.uid)).data.isAdmin == true;
+    }
+    
+    // Helper function to check if user is event organizer
+    function isEventOrganizer(eventId) {
+      return isAuthenticated() &&
+             exists(/databases/$(database)/documents/events/$(eventId)) &&
+             get(/databases/$(database)/documents/events/$(eventId)).data.organizerId == request.auth.uid;
+    }
+    
+    // ============================================
+    // EXPENSE TRACKER RULES
+    // ============================================
+    match /event_expenses/{expenseId} {
+      // Allow organizers and admins to read expenses for their events
+      allow read: if isAuthenticated() && (
+        isAdmin() ||
+        isEventOrganizer(resource.data.eventId)
+      );
+      
+      // Allow organizers and admins to create expenses
+      allow create: if isAuthenticated() && (
+        isAdmin() ||
+        isEventOrganizer(request.resource.data.eventId)
+      ) && request.resource.data.createdBy == request.auth.uid;
+      
+      // Allow users to update their own expenses, or admins to update any
+      allow update: if isAuthenticated() && (
+        isAdmin() ||
+        resource.data.createdBy == request.auth.uid
+      );
+      
+      // Allow users to delete their own expenses, or admins to delete any
+      allow delete: if isAuthenticated() && (
+        isAdmin() ||
+        resource.data.createdBy == request.auth.uid
+      );
+    }
+    
+    // ============================================
+    // EXISTING RULES (keep your existing rules below)
+    // ============================================
+    // Add your existing rules for users, events, etc. here
+    
+  }
+}

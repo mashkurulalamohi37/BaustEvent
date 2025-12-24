@@ -1,0 +1,26 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Backup Rules for Android 12 and below (API 31 and below) -->
+<full-backup-content>
+    <!-- 
+        Include app data in backups for user convenience
+        Exclude sensitive data for security
+    -->
+    
+    <!-- Include shared preferences (except sensitive ones) -->
+    <include domain="sharedpref" path="." />
+    
+    <!-- Include app database -->
+    <include domain="database" path="." />
+    
+    <!-- Include app files -->
+    <include domain="file" path="." />
+    
+    <!-- Exclude sensitive data -->
+    <exclude domain="sharedpref" path="FlutterSecureStorage" />
+    <exclude domain="sharedpref" path="auth_prefs" />
+    <exclude domain="database" path="secure.db" />
+    
+    <!-- Exclude cache -->
+    <exclude domain="file" path="cache/" />
+    <exclude domain="file" path="code_cache/" />
+</full-backup-content>

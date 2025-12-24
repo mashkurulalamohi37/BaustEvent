@@ -313,6 +313,7 @@ class FirebaseUserService {
 
       // Create profile in Firestore
       final userData = {
+        'id': user.id,
         'email': user.email.toLowerCase().trim(), // Store email in lowercase for consistency
         'name': user.name,
         'universityId': user.universityId,

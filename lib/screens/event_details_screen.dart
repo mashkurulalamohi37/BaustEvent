@@ -17,6 +17,7 @@ import 'edit_event_screen.dart';
 import 'manage_participants_screen.dart';
 import 'welcome_screen.dart';
 import 'participant_registration_form_screen.dart';
+import 'expense_tracker_screen.dart';
 
 class EventDetailsScreen extends StatefulWidget {
   final Event event;
@@ -1010,6 +1011,36 @@ class _EventDetailsScreenState extends State<EventDetailsScreen> {
                     ),
                   ),
                 ],
+              ),
+              const SizedBox(height: 12),
+              // Expense Tracker Button
+              SizedBox(
+                width: double.infinity,
+                child: ElevatedButton.icon(
+                  onPressed: () {
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (context) => ExpenseTrackerScreen(
+                          event: _event,
+                          userId: widget.userId ?? _currentUser?.id ?? '',
+                          isAdmin: _currentUser?.isAdmin ?? false,
+                        ),
+                      ),
+                    );
+                  },
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: Colors.green,
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                  ),
+                  icon: const Icon(Icons.account_balance_wallet, color: Colors.white),
+                  label: const Text(
+                    'Expense Tracker',
+                    style: TextStyle(color: Colors.white),
+                  ),
+                ),
               ),
               const SizedBox(height: 12),
               Row(

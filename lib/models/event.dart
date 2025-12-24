@@ -31,6 +31,7 @@ class Event {
   final String? hostName;
   final bool allowReviews;
   final DateTime createdAt;
+  final double? budget; // Total budget for the event
 
   Event({
     required this.id,
@@ -63,6 +64,7 @@ class Event {
     this.requireGuardianNumber = false,
     this.hostName,
     this.allowReviews = false,
+    this.budget,
     DateTime? createdAt,
   }) : createdAt = createdAt ?? DateTime(2020, 1, 1);
 
@@ -98,6 +100,7 @@ class Event {
       'requirePersonalNumber': requirePersonalNumber,
       'requireGuardianNumber': requireGuardianNumber,
       'createdAt': createdAt.toIso8601String(),
+      'budget': budget,
     };
   }
 
@@ -145,6 +148,11 @@ class Event {
       createdAt: json['createdAt'] != null
           ? DateTime.tryParse(json['createdAt']) ?? DateTime.now()
           : DateTime.now(),
+      budget: json['budget'] != null 
+          ? (json['budget'] is int 
+              ? (json['budget'] as int).toDouble() 
+              : json['budget'] as double?)
+          : null,
     );
   }
 

@@ -39,11 +39,11 @@ service cloud.firestore {
       // Users can create their own profile during signup
       allow create: if isAuthenticated() && 
         getUserId() == userId &&
-        request.resource.data.keys().hasAll(['id', 'email', 'name', 'universityId', 'type']);
+        request.resource.data.keys().hasAll(['email', 'name', 'universityId', 'type']);
       
       // Users can update their own profile, admins can update any profile
       allow update: if isAuthenticated() && (
-        (getUserId() == userId && request.resource.data.id == userId) ||
+        getUserId() == userId ||
         isAdmin(getUserId())
       );
       
@@ -127,8 +127,11 @@ service cloud.firestore {
     
     // Organizer Requests collection
     match /organizer_requests/{requestId} {
-      // Only admins can read organizer requests
-      allow read: if isAuthenticated() && isAdmin(getUserId());
+      // Users can read their own requests, Admins can read all requests
+      allow read: if isAuthenticated() && (
+        isAdmin(getUserId()) || 
+        resource.data.userId == getUserId()
+      );
       
       // Users can create their own organizer requests during signup
       allow create: if isAuthenticated() && request.resource.data.userId == getUserId();
@@ -169,6 +172,36 @@ service cloud.firestore {
       allow delete: if isAuthenticated() && (
         isAdmin(getUserId()) ||
         isOrganizer(getUserId())
+      );
+    }
+    
+    // Expense Tracker collection - stores event expenses
+    match /event_expenses/{expenseId} {
+      // Allow organizers and admins to read expenses
+      // Note: For list queries with where('eventId', '==', eventId), 
+      // Firestore will only return documents that match the query
+      allow read: if isAuthenticated() && (
+        isAdmin(getUserId()) ||
+        isOrganizer(getUserId())
+      );
+      
+      // Allow organizers and admins to create expenses
+      allow create: if isAuthenticated() && (
+        isAdmin(getUserId()) ||
+        isOrganizer(getUserId())
+      ) && request.resource.data.createdBy == getUserId() &&
+      request.resource.data.keys().hasAll(['eventId', 'category', 'description', 'amount', 'date', 'createdBy', 'createdAt', 'paymentMethod']);
+      
+      // Allow users to update their own expenses, or admins to update any
+      allow update: if isAuthenticated() && (
+        isAdmin(getUserId()) ||
+        (resource.data.createdBy == getUserId() && isOrganizer(getUserId()))
+      );
+      
+      // Allow users to delete their own expenses, or admins to delete any
+      allow delete: if isAuthenticated() && (
+        isAdmin(getUserId()) ||
+        (resource.data.createdBy == getUserId() && isOrganizer(getUserId()))
       );
     }
     

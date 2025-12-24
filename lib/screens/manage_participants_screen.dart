@@ -10,6 +10,10 @@ import '../services/firebase_event_service.dart';
 import '../services/firebase_user_service.dart';
 import '../services/qr_service.dart';
 import '../services/theme_service.dart';
+import 'package:excel/excel.dart' hide Border;
+import 'package:path_provider/path_provider.dart';
+import 'dart:io';
+import 'package:share_plus/share_plus.dart';
 
 class ManageParticipantsScreen extends StatefulWidget {
   final Event event;
@@ -367,6 +371,102 @@ class _ManageParticipantsScreenState extends State<ManageParticipantsScreen> {
           content: Text('Failed to remove participant'),
           backgroundColor: Colors.red,
         ),
+      );
+    }
+  }
+
+  Future<void> _exportParticipantsToExcel() async {
+    if (_participants.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('No participants to export')),
+      );
+      return;
+    }
+
+    try {
+      // 1. Prepare Data: Filter and Sort
+      List<User> exportList = _getFilteredParticipants();
+
+      // Sort by Batch, then Section, then Name
+      exportList.sort((a, b) {
+        final infoA = _participantInfo[a.id];
+        final infoB = _participantInfo[b.id];
+
+        final batchA = infoA?.batch?.trim() ?? 'Z'; // 'Z' puts undefined at the end
+        final batchB = infoB?.batch?.trim() ?? 'Z';
+        int batchCompare = batchA.compareTo(batchB);
+        if (batchCompare != 0) return batchCompare;
+
+        final sectionA = infoA?.section?.trim() ?? 'Z';
+        final sectionB = infoB?.section?.trim() ?? 'Z';
+        int sectionCompare = sectionA.compareTo(sectionB);
+        if (sectionCompare != 0) return sectionCompare;
+
+        return a.name.compareTo(b.name);
+      });
+
+      // 2. Create Excel
+      var excel = Excel.createExcel();
+      String sheetName = 'Participants';
+      excel.rename('Sheet1', sheetName);
+      Sheet sheet = excel[sheetName];
+
+      // 3. Add Headers
+      List<String> headers = [
+        'Name',
+        'Student ID',
+        'Batch',
+        'Section',
+        'Email',
+        'Phone',
+        'Guardian Phone',
+        'Hall',
+        'T-Shirt',
+        'Food',
+        'Gender',
+        'Payment',
+        'Status'
+      ];
+      sheet.appendRow(headers.map((h) => TextCellValue(h)).toList());
+
+      // 4. Add Rows
+      for (var user in exportList) {
+        final info = _participantInfo[user.id];
+        final paymentMethod = info?.paymentMethod == 'handCash' ? 'Hand Cash' : (info?.paymentMethod ?? '');
+        
+        sheet.appendRow([
+          TextCellValue(user.name),
+          TextCellValue(user.universityId),
+          TextCellValue(info?.batch ?? ''),
+          TextCellValue(info?.section ?? ''),
+          TextCellValue(user.email),
+          TextCellValue(info?.personalNumber ?? ''),
+          TextCellValue(info?.guardianNumber ?? ''),
+          TextCellValue(info?.hall ?? ''),
+          TextCellValue(info?.tshirtSize ?? ''),
+          TextCellValue(info?.foodPreference ?? ''),
+          TextCellValue(info?.gender ?? ''),
+          TextCellValue(paymentMethod),
+          TextCellValue('Registered'), // Since these are from _participants list
+        ]);
+      }
+
+      // 5. Save and Share
+      final directory = await getTemporaryDirectory();
+      final path = '${directory.path}/Event_Participants_${DateTime.now().millisecondsSinceEpoch}.xlsx';
+      final file = File(path);
+      final fileBytes = excel.save();
+
+      if (fileBytes != null) {
+        await file.writeAsBytes(fileBytes);
+        final xFile = XFile(path);
+        await Share.shareXFiles([xFile], text: '${widget.event.title} - Participant List (Batch-wise)');
+      }
+
+    } catch (e) {
+      print('Error exporting participants: $e');
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Export failed: $e')),
       );
     }
   }
@@ -854,6 +954,11 @@ class _ManageParticipantsScreenState extends State<ManageParticipantsScreen> {
             style: const TextStyle(color: Colors.black87),
           ),
           actions: [
+              IconButton(
+                icon: const Icon(Icons.download, color: Colors.green),
+                onPressed: _exportParticipantsToExcel,
+                tooltip: 'Export Excel',
+              ),
               IconButton(
                 icon: const Icon(Icons.refresh),
                 onPressed: _loadParticipants,
