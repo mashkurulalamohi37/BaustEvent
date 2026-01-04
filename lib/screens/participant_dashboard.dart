@@ -1126,11 +1126,6 @@ class _ParticipantDashboardState extends State<ParticipantDashboard> {
             
             const SizedBox(height: 8),
             
-            if (_mealSettings != null) ...[
-              _buildMealStatusBanner(),
-              const SizedBox(height: 16),
-            ],
-            
             // Show search results if searching
             if (hasSearchQuery) ...[
               Row(
