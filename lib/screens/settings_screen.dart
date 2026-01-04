@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../services/theme_service.dart';
 import 'change_password_screen.dart';
+import 'share_app_screen.dart';
 import 'terms_of_service_screen.dart';
 import 'privacy_policy_screen.dart';
 
@@ -184,6 +185,30 @@ class _SettingsScreenState extends State<SettingsScreen> {
                       icon: Icons.delete_outline,
                       iconColor: Colors.red,
                       onTap: () => _showDeleteAccountDialog(),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 20),
+                
+                // Share App Section
+                _buildSectionCard(
+                  title: 'Share App',
+                  icon: Icons.share_outlined,
+                  iconColor: Colors.green,
+                  children: [
+                    _buildListTile(
+                      title: 'Share with iOS Users',
+                      subtitle: 'QR code and installation guide for iPhone/iPad',
+                      icon: Icons.apple,
+                      iconColor: Colors.green,
+                      onTap: () {
+                        Navigator.push(
+                          context,
+                          MaterialPageRoute(
+                            builder: (context) => const ShareAppScreen(),
+                          ),
+                        );
+                      },
                     ),
                   ],
                 ),

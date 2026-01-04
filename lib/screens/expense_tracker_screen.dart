@@ -5,6 +5,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import '../models/event.dart';
 import '../models/event_expense.dart';
 import '../services/firebase_expense_service.dart';
+import '../services/excel_export_service.dart';
 import '../widgets/expense_card.dart';
 import '../widgets/expense_summary_card.dart';
 import '../widgets/budget_tracker_card.dart';
@@ -192,18 +193,20 @@ class _ExpenseTrackerScreenState extends State<ExpenseTrackerScreen> {
         ]);
       }
 
-      // Save file
-      final directory = await getTemporaryDirectory();
-      final path = '${directory.path}/expenses_${DateTime.now().millisecondsSinceEpoch}.xlsx';
-      final file = File(path);
-      final fileBytes = excel.save();
-      
-      if (fileBytes != null) {
-        await file.writeAsBytes(fileBytes);
-        
-        // Share file
-        final xFile = XFile(path);
-        await Share.shareXFiles([xFile], text: '${widget.event.title} Expenses Export');
+      // Export using cross-platform service
+      await ExcelExportService.exportExcel(
+        excel: excel,
+        fileName: 'expenses_${DateTime.now().millisecondsSinceEpoch}.xlsx',
+        shareText: '${widget.event.title} Expenses Export',
+      );
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Expenses exported successfully'),
+            backgroundColor: Colors.green,
+          ),
+        );
       }
       
     } catch (e) {

@@ -75,12 +75,7 @@ class QRService {
     required Function(String) onCodeScanned,
     required VoidCallback onScannerReady,
   }) {
-    // Check if mobile_scanner is supported on this platform
-    if (kIsWeb || defaultTargetPlatform == TargetPlatform.macOS) {
-      // For macOS and web, show a text input as fallback
-      return _buildTextInputScanner(onCodeScanned);
-    }
-    
+    // mobile_scanner supports web, iOS, Android, and macOS
     return MobileScanner(
       onDetect: (capture) {
         final List<Barcode> barcodes = capture.barcodes;
@@ -91,48 +86,6 @@ class QRService {
           }
         }
       },
-    );
-  }
-
-  // Fallback text input for platforms without camera support
-  static Widget _buildTextInputScanner(Function(String) onCodeScanned) {
-    final controller = TextEditingController();
-    return Padding(
-      padding: const EdgeInsets.all(16.0),
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          const Icon(Icons.qr_code_scanner, size: 64, color: Colors.grey),
-          const SizedBox(height: 16),
-          const Text(
-            'Enter QR Code Data',
-            style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
-          ),
-          const SizedBox(height: 16),
-          TextField(
-            controller: controller,
-            decoration: const InputDecoration(
-              labelText: 'QR Code Data',
-              border: OutlineInputBorder(),
-              hintText: 'Paste QR code data here',
-            ),
-            onSubmitted: (value) {
-              if (value.isNotEmpty) {
-                onCodeScanned(value);
-              }
-            },
-          ),
-          const SizedBox(height: 16),
-          ElevatedButton(
-            onPressed: () {
-              if (controller.text.isNotEmpty) {
-                onCodeScanned(controller.text);
-              }
-            },
-            child: const Text('Submit'),
-          ),
-        ],
-      ),
     );
   }
 

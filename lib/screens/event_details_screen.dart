@@ -1003,11 +1003,15 @@ class _EventDetailsScreenState extends State<EventDetailsScreen> {
                       },
                       style: ElevatedButton.styleFrom(
                         backgroundColor: const Color(0xFF1976D2),
+                        foregroundColor: Colors.white,
                         shape: RoundedRectangleBorder(
                           borderRadius: BorderRadius.circular(12),
                         ),
                       ),
-                      child: const Text('Manage'),
+                      child: const Text(
+                        'Manage',
+                        style: TextStyle(color: Colors.white),
+                      ),
                     ),
                   ),
                 ],

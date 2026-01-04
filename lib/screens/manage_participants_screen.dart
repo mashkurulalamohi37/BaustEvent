@@ -10,6 +10,7 @@ import '../services/firebase_event_service.dart';
 import '../services/firebase_user_service.dart';
 import '../services/qr_service.dart';
 import '../services/theme_service.dart';
+import '../services/excel_export_service.dart';
 import 'package:excel/excel.dart' hide Border;
 import 'package:path_provider/path_provider.dart';
 import 'dart:io';
@@ -451,16 +452,20 @@ class _ManageParticipantsScreenState extends State<ManageParticipantsScreen> {
         ]);
       }
 
-      // 5. Save and Share
-      final directory = await getTemporaryDirectory();
-      final path = '${directory.path}/Event_Participants_${DateTime.now().millisecondsSinceEpoch}.xlsx';
-      final file = File(path);
-      final fileBytes = excel.save();
+      // Export using cross-platform service
+      await ExcelExportService.exportExcel(
+        excel: excel,
+        fileName: 'Event_Participants_${DateTime.now().millisecondsSinceEpoch}.xlsx',
+        shareText: '${widget.event.title} - Participant List (Batch-wise)',
+      );
 
-      if (fileBytes != null) {
-        await file.writeAsBytes(fileBytes);
-        final xFile = XFile(path);
-        await Share.shareXFiles([xFile], text: '${widget.event.title} - Participant List (Batch-wise)');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Participants exported successfully'),
+            backgroundColor: Colors.green,
+          ),
+        );
       }
 
     } catch (e) {
@@ -474,55 +479,7 @@ class _ManageParticipantsScreenState extends State<ManageParticipantsScreen> {
   void _showQRScanner() {
     setState(() => _isScanning = true);
     
-    // Check if mobile_scanner is supported on this platform
-    if (kIsWeb || defaultTargetPlatform == TargetPlatform.macOS) {
-      // For macOS and web, show a text input dialog as fallback
-      final controller = TextEditingController();
-      showDialog(
-        context: context,
-        builder: (context) => AlertDialog(
-          title: const Text('Enter QR Code Data'),
-          content: SizedBox(
-            width: 300,
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                const Icon(Icons.qr_code_scanner, size: 64, color: Colors.grey),
-                const SizedBox(height: 16),
-                TextField(
-                  controller: controller,
-                  decoration: const InputDecoration(
-                    labelText: 'QR Code Data',
-                    border: OutlineInputBorder(),
-                    hintText: 'Paste QR code data here',
-                  ),
-                ),
-              ],
-            ),
-          ),
-          actions: [
-            TextButton(
-              onPressed: () {
-                Navigator.pop(context);
-                setState(() => _isScanning = false);
-              },
-              child: const Text('Cancel'),
-            ),
-            TextButton(
-              onPressed: () {
-                if (controller.text.isNotEmpty) {
-                  Navigator.pop(context);
-                  _processQRCode(controller.text);
-                }
-              },
-              child: const Text('Submit'),
-            ),
-          ],
-        ),
-      );
-      return;
-    }
-    
+    // mobile_scanner supports web, iOS, Android, and macOS
     _scannerController = MobileScannerController();
     
     showDialog(
