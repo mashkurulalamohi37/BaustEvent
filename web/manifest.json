@@ -1,23 +1,32 @@
 {
-    "name": "baust_event",
-    "short_name": "baust_event",
-    "start_url": ".",
+    "name": "EventBridge - BAUST Event Management",
+    "short_name": "EventBridge",
+    "start_url": "/",
+    "scope": "/",
     "display": "standalone",
     "background_color": "#FFFFFF",
     "theme_color": "#1976D2",
-    "description": "A new Flutter project.",
+    "description": "Baust Event Management System - A comprehensive event management platform for organizing, managing, and participating in events with QR code check-ins, real-time notifications, and participant management.",
     "orientation": "portrait-primary",
     "prefer_related_applications": false,
+    "categories": [
+        "education",
+        "productivity",
+        "utilities"
+    ],
+    "screenshots": [],
     "icons": [
         {
             "src": "icons/Icon-192.png",
             "sizes": "192x192",
-            "type": "image/png"
+            "type": "image/png",
+            "purpose": "any"
         },
         {
             "src": "icons/Icon-512.png",
             "sizes": "512x512",
-            "type": "image/png"
+            "type": "image/png",
+            "purpose": "any"
         },
         {
             "src": "icons/Icon-maskable-192.png",
@@ -30,6 +39,12 @@
             "sizes": "512x512",
             "type": "image/png",
             "purpose": "maskable"
+        },
+        {
+            "src": "icons/Icon-192.png",
+            "sizes": "192x192",
+            "type": "image/png",
+            "purpose": "any maskable"
         }
     ]
 }

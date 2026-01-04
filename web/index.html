@@ -18,21 +18,230 @@
 
   <meta charset="UTF-8">
   <meta content="IE=Edge" http-equiv="X-UA-Compatible">
-  <meta name="description" content="A new Flutter project.">
+  <meta name="description" content="EventBridge - Comprehensive event management platform for BAUST with QR code check-ins, real-time notifications, and participant management.">
+  <meta name="keywords" content="event management, BAUST, QR code, check-in, notifications, event organizer">
+  <meta name="author" content="EventBridge Team">
+  
+  <!-- Viewport Settings -->
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=5.0, user-scalable=yes">
 
-  <!-- iOS meta tags & icons -->
+  <!-- iOS Specific Meta Tags for PWA -->
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="EventBridge">
   <meta name="mobile-web-app-capable" content="yes">
-  <meta name="apple-mobile-web-app-status-bar-style" content="black">
-  <meta name="apple-mobile-web-app-title" content="baust_event">
+  
+  <!-- iOS Splash Screens - Different sizes for different devices -->
+  <link rel="apple-touch-startup-image" href="icons/Icon-512.png">
+  
+  <!-- iOS Icons -->
   <link rel="apple-touch-icon" href="icons/Icon-192.png">
+  <link rel="apple-touch-icon" sizes="152x152" href="icons/Icon-192.png">
+  <link rel="apple-touch-icon" sizes="180x180" href="icons/Icon-192.png">
+  <link rel="apple-touch-icon" sizes="167x167" href="icons/Icon-192.png">
 
-  <!-- Favicon -->
+  <!-- Standard Favicon -->
   <link rel="icon" type="image/png" href="favicon.png"/>
+  
+  <!-- Theme Color -->
+  <meta name="theme-color" content="#1976D2">
+  <meta name="msapplication-navbutton-color" content="#1976D2">
+  <meta name="apple-mobile-web-app-status-bar-style" content="#1976D2">
 
-  <title>baust_event</title>
+  <title>EventBridge - BAUST Event Management</title>
   <link rel="manifest" href="manifest.json">
+  
+  <style>
+    /* iOS Install Prompt Banner */
+    .ios-install-prompt {
+      display: none;
+      position: fixed;
+      bottom: 0;
+      left: 0;
+      right: 0;
+      background: linear-gradient(135deg, #1976D2 0%, #42A5F5 100%);
+      color: white;
+      padding: 16px 20px;
+      box-shadow: 0 -4px 12px rgba(0,0,0,0.15);
+      z-index: 9999;
+      animation: slideUp 0.3s ease-out;
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+    }
+    
+    @keyframes slideUp {
+      from {
+        transform: translateY(100%);
+      }
+      to {
+        transform: translateY(0);
+      }
+    }
+    
+    .ios-install-prompt.show {
+      display: block;
+    }
+    
+    .install-content {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      max-width: 600px;
+      margin: 0 auto;
+    }
+    
+    .install-text {
+      flex: 1;
+      margin-right: 12px;
+    }
+    
+    .install-title {
+      font-weight: 600;
+      font-size: 16px;
+      margin-bottom: 4px;
+    }
+    
+    .install-instructions {
+      font-size: 13px;
+      opacity: 0.95;
+      line-height: 1.4;
+    }
+    
+    .install-icon {
+      font-size: 24px;
+      margin-right: 12px;
+    }
+    
+    .close-prompt {
+      background: rgba(255,255,255,0.2);
+      border: none;
+      color: white;
+      padding: 8px 16px;
+      border-radius: 6px;
+      font-size: 14px;
+      font-weight: 500;
+      cursor: pointer;
+      transition: background 0.2s;
+    }
+    
+    .close-prompt:hover {
+      background: rgba(255,255,255,0.3);
+    }
+    
+    /* Loading Screen */
+    .loading-screen {
+      position: fixed;
+      top: 0;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      background: linear-gradient(135deg, #1976D2 0%, #42A5F5 100%);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      z-index: 10000;
+    }
+    
+    .loading-content {
+      text-align: center;
+      color: white;
+    }
+    
+    .spinner {
+      width: 50px;
+      height: 50px;
+      border: 4px solid rgba(255,255,255,0.3);
+      border-top-color: white;
+      border-radius: 50%;
+      animation: spin 1s linear infinite;
+      margin: 0 auto 20px;
+    }
+    
+    @keyframes spin {
+      to { transform: rotate(360deg); }
+    }
+  </style>
 </head>
 <body>
+  <!-- Loading Screen (will be hidden when Flutter loads) -->
+  <div class="loading-screen" id="loadingScreen">
+    <div class="loading-content">
+      <div class="spinner"></div>
+      <div style="font-size: 18px; font-weight: 500;">Loading EventBridge...</div>
+    </div>
+  </div>
+
+  <!-- iOS Install Prompt -->
+  <div class="ios-install-prompt" id="iosInstallPrompt">
+    <div class="install-content">
+      <div class="install-icon">📱</div>
+      <div class="install-text">
+        <div class="install-title">Install EventBridge</div>
+        <div class="install-instructions">
+          Tap <strong>Share</strong> <svg width="12" height="16" viewBox="0 0 12 16" fill="white" style="display: inline; vertical-align: middle; margin: 0 2px;"><path d="M6 0L4.6 1.4L8.2 5H0v2h8.2L4.6 10.6L6 12l6-6z" transform="rotate(-90 6 6)"/></svg> then <strong>Add to Home Screen</strong>
+        </div>
+      </div>
+      <button class="close-prompt" onclick="closeInstallPrompt()">Got it</button>
+    </div>
+  </div>
+
+  <script>
+    // Detect if running as standalone (installed PWA)
+    const isStandalone = window.matchMedia('(display-mode: standalone)').matches || 
+                         window.navigator.standalone === true;
+    
+    // Detect iOS
+    const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) && !window.MSStream;
+    
+    // Show install prompt for iOS users who haven't installed yet
+    if (isIOS && !isStandalone) {
+      // Check if user has dismissed the prompt before
+      const promptDismissed = localStorage.getItem('ios-install-prompt-dismissed');
+      const dismissedTime = localStorage.getItem('ios-install-prompt-dismissed-time');
+      
+      // Show prompt if never dismissed, or if dismissed more than 7 days ago
+      const shouldShow = !promptDismissed || 
+                        (dismissedTime && Date.now() - parseInt(dismissedTime) > 7 * 24 * 60 * 60 * 1000);
+      
+      if (shouldShow) {
+        // Show after a short delay to not interrupt initial load
+        setTimeout(() => {
+          document.getElementById('iosInstallPrompt').classList.add('show');
+        }, 3000);
+      }
+    }
+    
+    function closeInstallPrompt() {
+      document.getElementById('iosInstallPrompt').classList.remove('show');
+      localStorage.setItem('ios-install-prompt-dismissed', 'true');
+      localStorage.setItem('ios-install-prompt-dismissed-time', Date.now().toString());
+    }
+    
+    // Hide loading screen when Flutter is ready
+    window.addEventListener('flutter-first-frame', function() {
+      const loadingScreen = document.getElementById('loadingScreen');
+      if (loadingScreen) {
+        loadingScreen.style.opacity = '0';
+        loadingScreen.style.transition = 'opacity 0.3s';
+        setTimeout(() => {
+          loadingScreen.style.display = 'none';
+        }, 300);
+      }
+    });
+    
+    // Service Worker Registration
+    if ('serviceWorker' in navigator) {
+      window.addEventListener('load', function() {
+        navigator.serviceWorker.register('flutter_service_worker.js')
+          .then(function(registration) {
+            console.log('ServiceWorker registration successful');
+          })
+          .catch(function(error) {
+            console.log('ServiceWorker registration failed: ', error);
+          });
+      });
+    }
+  </script>
+  
   <script src="flutter_bootstrap.js" async></script>
 </body>
 </html>
