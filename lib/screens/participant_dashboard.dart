@@ -230,10 +230,20 @@ class _ParticipantDashboardState extends State<ParticipantDashboard> {
   Future<void> _loadActivePolls() async {
     try {
       final polls = await FirebasePollService.getAllPolls();
-      final active = polls.where((poll) => poll.isActive).toList();
+      // Show active polls AND polls closed within the last 24 hours
+      final now = DateTime.now();
+      final oneDayAgo = now.subtract(const Duration(hours: 24));
+      
+      final activeAndRecent = polls.where((poll) {
+        if (poll.isActive) return true;
+        // Keep closed polls visible for 24 hours so users can see results
+        // Use expiresAt as a proxy for close time since we don't track closedAt separately yet
+        return poll.expiresAt.isAfter(oneDayAgo);
+      }).toList();
+      
       if (mounted) {
         setState(() {
-          _activePolls = active;
+          _activePolls = activeAndRecent;
         });
       }
     } catch (e) {
@@ -2553,10 +2563,14 @@ class _ParticipantDashboardState extends State<ParticipantDashboard> {
   }
   
   Widget _buildActivePollCard(bool isDark) {
-    final mostUrgentPoll = _activePolls.reduce((a, b) => 
-      a.timeRemaining.inMinutes < b.timeRemaining.inMinutes ? a : b
-    );
+    // Sort logic: Active first, then by time remaining
+    final mostUrgentPoll = _activePolls.reduce((a, b) {
+      if (a.isActive && !b.isActive) return a;
+      if (!a.isActive && b.isActive) return b;
+      return a.timeRemaining.inMinutes < b.timeRemaining.inMinutes ? a : b;
+    });
     
+    final isExpired = !mostUrgentPoll.isActive;
     final timeRemaining = mostUrgentPoll.timeRemaining;
     final hours = timeRemaining.inHours;
     final minutes = timeRemaining.inMinutes.remainder(60);
@@ -2564,7 +2578,10 @@ class _ParticipantDashboardState extends State<ParticipantDashboard> {
     String timeText;
     Color timeColor;
     
-    if (hours > 0) {
+    if (isExpired) {
+      timeText = '🏁 Polling Closed - View Results';
+      timeColor = Colors.white;
+    } else if (hours > 0) {
       timeText = '⏱ ${hours}h ${minutes}m remaining';
       timeColor = hours > 2 ? Colors.green : Colors.orange;
     } else if (minutes > 5) {
@@ -2578,17 +2595,16 @@ class _ParticipantDashboardState extends State<ParticipantDashboard> {
     return Container(
       decoration: BoxDecoration(
         gradient: LinearGradient(
-          colors: [
-            Colors.red.shade600,
-            Colors.orange.shade600,
-          ],
+          colors: isExpired
+              ? [Colors.blue.shade700, Colors.purple.shade700]
+              : [Colors.red.shade600, Colors.orange.shade600],
           begin: Alignment.topLeft,
           end: Alignment.bottomRight,
         ),
         borderRadius: BorderRadius.circular(16),
         boxShadow: [
           BoxShadow(
-            color: Colors.red.withOpacity(0.4),
+            color: (isExpired ? Colors.blue : Colors.red).withOpacity(0.4),
             blurRadius: 12,
             offset: const Offset(0, 4),
           ),
@@ -2617,8 +2633,8 @@ class _ParticipantDashboardState extends State<ParticipantDashboard> {
                       color: Colors.white.withOpacity(0.2),
                       borderRadius: BorderRadius.circular(10),
                     ),
-                    child: const Icon(
-                      Icons.poll,
+                    child: Icon(
+                      isExpired ? Icons.poll_outlined : Icons.poll,
                       color: Colors.white,
                       size: 24,
                     ),
@@ -2649,7 +2665,9 @@ class _ParticipantDashboardState extends State<ParticipantDashboard> {
                                 borderRadius: BorderRadius.circular(12),
                               ),
                               child: Text(
-                                '${_activePolls.length} Active',
+                                isExpired 
+                                    ? 'Result Available'
+                                    : '${_activePolls.where((p) => p.isActive).length} Active',
                                 style: const TextStyle(
                                   fontSize: 11,
                                   fontWeight: FontWeight.w600,
@@ -2685,10 +2703,14 @@ class _ParticipantDashboardState extends State<ParticipantDashboard> {
               Container(
                 padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
                 decoration: BoxDecoration(
-                  color: timeColor.withOpacity(0.2),
+                  color: isExpired 
+                      ? Colors.white.withOpacity(0.2)
+                      : timeColor.withOpacity(0.2),
                   borderRadius: BorderRadius.circular(8),
                   border: Border.all(
-                    color: timeColor.withOpacity(0.5),
+                    color: isExpired 
+                        ? Colors.white.withOpacity(0.3)
+                        : timeColor.withOpacity(0.5),
                     width: 1,
                   ),
                 ),
@@ -2696,7 +2718,7 @@ class _ParticipantDashboardState extends State<ParticipantDashboard> {
                   mainAxisSize: MainAxisSize.min,
                   children: [
                     Icon(
-                      Icons.timer,
+                      isExpired ? Icons.bar_chart : Icons.timer,
                       size: 14,
                       color: Colors.white,
                     ),
