@@ -91,7 +91,7 @@ service cloud.firestore {
         (isOrganizer(getUserId()) && request.resource.data.organizerId == getUserId()) ||
         isAdmin(getUserId())
       ) &&
-      request.resource.data.keys().hasAll(['id', 'title', 'organizerId', 'date', 'createdAt']) &&
+      request.resource.data.keys().hasAll(['title', 'organizerId', 'date', 'createdAt']) &&
       (request.resource.data.participants == null || request.resource.data.participants.size() <= 10000);
       
       // Event organizer or admin can update events
@@ -106,17 +106,13 @@ service cloud.firestore {
     
     // Notifications collection
     match /notifications/{notificationId} {
-      // Users can read their own notifications, organizers and admins can read all
-      allow read: if isAuthenticated() && (
-        resource.data.userId == getUserId() ||
-        isOrganizer(getUserId()) ||
-        isAdmin(getUserId())
-      );
+      // All authenticated users can read notifications (they're broadcast to everyone)
+      allow read: if isAuthenticated();
       
-      // Organizers and admins can create notifications (when creating events)
+      // Organizers and admins can create notifications (when creating events/polls)
+      // Notifications don't have userId - they're broadcast to all users
       allow create: if isAuthenticated() && 
-        (isOrganizer(getUserId()) || isAdmin(getUserId())) &&
-        request.resource.data.keys().hasAll(['userId', 'title', 'message', 'timestamp']);
+        (isOrganizer(getUserId()) || isAdmin(getUserId()));
       
       // Users can update their own notifications to mark them as read (only the 'read' field)
       allow update: if isAuthenticated() && 
@@ -202,6 +198,35 @@ service cloud.firestore {
       allow delete: if isAuthenticated() && (
         isAdmin(getUserId()) ||
         (resource.data.createdBy == getUserId() && isOrganizer(getUserId()))
+      );
+    }
+    
+    // Polls collection - stores flash polls for quick decisions
+    match /polls/{pollId} {
+      // All authenticated users can read polls
+      allow read: if isAuthenticated();
+      
+      // Organizers and admins can create polls
+      allow create: if isAuthenticated() && (
+        isOrganizer(getUserId()) ||
+        isAdmin(getUserId())
+      ) &&
+      request.resource.data.creatorId == getUserId();
+      
+      // All authenticated users can update polls (for voting)
+      // Validate that only the 'options' field is being updated for votes
+      allow update: if isAuthenticated() && (
+        // Poll creator or admin can update any field
+        resource.data.creatorId == getUserId() ||
+        isAdmin(getUserId()) ||
+        // Any authenticated user can update to vote (only options field changes)
+        request.resource.data.diff(resource.data).affectedKeys().hasOnly(['options'])
+      );
+      
+      // Poll creator or admin can delete polls
+      allow delete: if isAuthenticated() && (
+        resource.data.creatorId == getUserId() ||
+        isAdmin(getUserId())
       );
     }
     

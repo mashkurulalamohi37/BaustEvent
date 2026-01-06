@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:intl/intl.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'event_details_screen.dart';
 import 'welcome_screen.dart';
 import 'create_event_screen.dart';
@@ -18,6 +19,7 @@ import 'analytics_screen.dart';
 import 'notifications_screen.dart';
 import 'settings_screen.dart';
 import 'help_support_screen.dart';
+import 'polls_screen.dart';
 import '../services/theme_service.dart';
 
 class OrganizerDashboard extends StatefulWidget {
@@ -38,6 +40,11 @@ class _OrganizerDashboardState extends State<OrganizerDashboard> {
   StreamSubscription<List<Event>>? _eventsSubscription;
   StreamSubscription<QuerySnapshot>? _notificationSubscription;
   Set<String> _shownNotificationIds = {}; // Track which notifications we've already shown
+  bool _notificationInitialLoadComplete = false;
+  SharedPreferences? _notificationPrefs;
+  DateTime? _lastNotificationSeenAt;
+  String? _activeNotificationUserId;
+  static const String _notificationPrefsKeyPrefix = 'organizer_last_notification_seen_';
 
   @override
   void initState() {
@@ -184,8 +191,11 @@ class _OrganizerDashboardState extends State<OrganizerDashboard> {
         },
       );
       
+      // Load notification preferences
+      await _ensureNotificationPrefsLoaded(organizerId);
+      
       // Set up listener for notifications
-      _setupNotificationListener();
+      _setupNotificationListener(organizerId);
     } catch (e, stackTrace) {
       print('❌ Error in _loadData: $e');
       print('Stack trace: $stackTrace');
@@ -193,63 +203,130 @@ class _OrganizerDashboardState extends State<OrganizerDashboard> {
     }
   }
   
+  Future<void> _ensureNotificationPrefsLoaded(String userId) async {
+    _notificationPrefs ??= await SharedPreferences.getInstance();
+    _activeNotificationUserId = userId;
+    final stored = _notificationPrefs!.getString('$_notificationPrefsKeyPrefix$userId');
+    if (stored != null) {
+      _lastNotificationSeenAt = DateTime.tryParse(stored);
+    } else {
+      // First time - mark current time so we don't show old notifications
+      _lastNotificationSeenAt = DateTime.now();
+      await _notificationPrefs!.setString(
+        '$_notificationPrefsKeyPrefix$userId',
+        _lastNotificationSeenAt!.toIso8601String(),
+      );
+    }
+  }
+
+  Future<void> _updateLastNotificationSeen(DateTime? createdAt) async {
+    final userId = _activeNotificationUserId;
+    if (userId == null) return;
+    final timestamp = createdAt ?? DateTime.now();
+    if (_lastNotificationSeenAt == null || timestamp.isAfter(_lastNotificationSeenAt!)) {
+      _lastNotificationSeenAt = timestamp;
+      _notificationPrefs ??= await SharedPreferences.getInstance();
+      await _notificationPrefs!.setString(
+        '$_notificationPrefsKeyPrefix$userId',
+        _lastNotificationSeenAt!.toIso8601String(),
+      );
+    }
+  }
+  
   // Set up listener for notifications from Firestore
-  void _setupNotificationListener() {
+  void _setupNotificationListener(String userId) {
     try {
+      print('Setting up organizer notification listener...');
       final notificationsCol = FirebaseFirestore.instance.collection('notifications');
       _notificationSubscription?.cancel();
+      _notificationInitialLoadComplete = false;
       
-      // Listen to all unread notifications
       _notificationSubscription = notificationsCol
           .where('read', isEqualTo: false)
           .orderBy('createdAt', descending: true)
           .snapshots()
           .listen((snapshot) {
-        if (snapshot.docs.isNotEmpty && mounted) {
+        print('Organizer notification listener triggered: ${snapshot.docs.length} unread notifications');
+        
+        // Bootstrap - skip all existing notifications on first load
+        if (!_notificationInitialLoadComplete) {
           for (var doc in snapshot.docs) {
-            final notificationId = doc.id;
-            if (_shownNotificationIds.contains(notificationId)) continue;
-            
-            final data = doc.data();
-            final type = data['type'] as String?;
-            final eventTitle = data['eventTitle'] as String? ?? 'Event';
-            final eventId = data['eventId'] as String? ?? '';
-            final category = data['category'] as String? ?? '';
-            
-            String title;
-            String body;
-            
-            switch (type) {
-              case 'new_event':
-                title = 'New Event Available!';
-                body = '$eventTitle - $category';
-                break;
-              case 'event_reminder':
-                title = 'Event Reminder';
-                body = '$eventTitle is happening soon!';
-                break;
-              case 'event_update':
-                title = 'Event Update: $eventTitle';
-                body = data['updateMessage'] as String? ?? 'Event has been updated';
-                break;
-              case 'event_registration':
-                title = 'Registration Confirmed';
-                body = 'You have successfully registered for $eventTitle';
-                break;
-              default:
-                title = 'EventBridge';
-                body = data['body'] as String? ?? 'You have a new notification';
-            }
-            
-            // Show system notification in phone notification panel
-            FirebaseNotificationService.showLocalNotification(
-              title: title,
-              body: body,
-              payload: 'event:$eventId',
-            );
-            
-            _shownNotificationIds.add(notificationId);
+            _shownNotificationIds.add(doc.id);
           }
+          _notificationInitialLoadComplete = true;
+          print('Notification bootstrap complete - existing notifications skipped');
+          return;
+        }
+        
+        if (!mounted) return;
+        
+        // Only process newly added notifications
+        final newNotifications = snapshot.docChanges
+            .where((change) => change.type == DocumentChangeType.added)
+            .map((change) => change.doc)
+            .where((doc) => !_shownNotificationIds.contains(doc.id))
+            .toList();
+        
+        if (newNotifications.isEmpty) return;
+        
+        for (var doc in newNotifications) {
+          final notificationId = doc.id;
+          final data = doc.data();
+          if (data == null) continue;
+          
+          final createdAtStr = data['createdAt'] as String?;
+          final createdAt = createdAtStr != null ? DateTime.tryParse(createdAtStr) : null;
+          
+          // Skip old notifications
+          if (_lastNotificationSeenAt != null &&
+              createdAt != null &&
+              !createdAt.isAfter(_lastNotificationSeenAt!)) {
+            _shownNotificationIds.add(notificationId);
+            continue;
+          }
+          
+          final type = data['type'] as String?;
+          final eventTitle = data['eventTitle'] as String? ?? data['title'] as String? ?? 'Event';
+          final eventId = data['eventId'] as String? ?? '';
+          final category = data['category'] as String? ?? '';
+          
+          String title;
+          String body;
+          
+          switch (type) {
+            case 'new_event':
+              title = 'New Event Available!';
+              body = '$eventTitle - $category';
+              break;
+            case 'event_reminder':
+              title = 'Event Reminder';
+              body = '$eventTitle is happening soon!';
+              break;
+            case 'event_update':
+              title = 'Event Update: $eventTitle';
+              body = data['updateMessage'] as String? ?? 'Event has been updated';
+              break;
+            case 'event_registration':
+              title = 'Registration Confirmed';
+              body = 'You have successfully registered for $eventTitle';
+              break;
+            case 'poll':
+              title = data['title'] as String? ?? '📊 New Poll';
+              body = data['body'] as String? ?? eventTitle;
+              break;
+            default:
+              title = 'EventBridge';
+              body = data['body'] as String? ?? 'You have a new notification';
+          }
+          
+          FirebaseNotificationService.showLocalNotification(
+            title: title,
+            body: body,
+            payload: 'event:$eventId',
+          );
+          
+          _shownNotificationIds.add(notificationId);
+           _updateLastNotificationSeen(createdAt);
         }
       }, onError: (error) {
         print('Error in notification listener: $error');
@@ -563,6 +640,88 @@ class _OrganizerDashboardState extends State<OrganizerDashboard> {
                         Icons.arrow_forward_ios, 
                         size: 16, 
                         color: isDark ? Colors.grey[400] : Colors.grey[600],
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+            const SizedBox(height: 12),
+            
+            // Flash Polls Quick Access
+            Container(
+              decoration: BoxDecoration(
+                gradient: LinearGradient(
+                  colors: [
+                    Colors.blue.shade600,
+                    Colors.purple.shade600,
+                  ],
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
+                ),
+                borderRadius: BorderRadius.circular(16),
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.purple.withOpacity(0.3),
+                    blurRadius: 12,
+                    offset: const Offset(0, 4),
+                  ),
+                ],
+              ),
+              child: InkWell(
+                onTap: () {
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (context) => const PollsScreen(),
+                    ),
+                  );
+                },
+                borderRadius: BorderRadius.circular(16),
+                child: Padding(
+                  padding: const EdgeInsets.all(16.0),
+                  child: Row(
+                    children: [
+                      Container(
+                        padding: const EdgeInsets.all(12),
+                        decoration: BoxDecoration(
+                          color: Colors.white.withOpacity(0.2),
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                        child: const Icon(
+                          Icons.poll,
+                          color: Colors.white,
+                          size: 28,
+                        ),
+                      ),
+                      const SizedBox(width: 14),
+                      const Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              'Flash Polls',
+                              style: TextStyle(
+                                fontSize: 16,
+                                fontWeight: FontWeight.bold,
+                                color: Colors.white,
+                              ),
+                            ),
+                            SizedBox(height: 4),
+                            Text(
+                              'Get quick decisions from your group',
+                              style: TextStyle(
+                                fontSize: 12,
+                                color: Colors.white70,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                      const Icon(
+                        Icons.arrow_forward_ios, 
+                        size: 16, 
+                        color: Colors.white70,
                       ),
                     ],
                   ),
@@ -1153,6 +1312,20 @@ class _OrganizerDashboardState extends State<OrganizerDashboard> {
                 ),
                 _buildDivider(),
                 _buildProfileOption(
+                  'Flash Polls',
+                  Icons.poll,
+                  Colors.purple,
+                  () {
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (context) => const PollsScreen(),
+                      ),
+                    );
+                  },
+                ),
+                _buildDivider(),
+                _buildProfileOption(
                   'Settings',
                   Icons.settings_outlined,
                   Colors.grey[700]!,
@@ -1187,7 +1360,7 @@ class _OrganizerDashboardState extends State<OrganizerDashboard> {
           // Logout Button
           SizedBox(
             width: double.infinity,
-            height: 52,
+            height: 56,
             child: ElevatedButton.icon(
               onPressed: () async {
                 // Show confirmation dialog
@@ -1207,7 +1380,8 @@ class _OrganizerDashboardState extends State<OrganizerDashboard> {
                       ElevatedButton(
                         onPressed: () => Navigator.pop(context, true),
                         style: ElevatedButton.styleFrom(
-                          backgroundColor: Colors.red,
+                          backgroundColor: Colors.red.shade600,
+                          foregroundColor: Colors.white,
                         ),
                         child: const Text('Logout'),
                       ),
@@ -1232,20 +1406,21 @@ class _OrganizerDashboardState extends State<OrganizerDashboard> {
                   }
                 }
               },
-              icon: const Icon(Icons.logout, size: 22, color: Colors.white),
+              icon: const Icon(Icons.logout_rounded, size: 22, color: Colors.white),
               label: const Text(
                 'Logout',
                 style: TextStyle(
                   fontSize: 17,
-                  fontWeight: FontWeight.w700,
+                  fontWeight: FontWeight.bold,
                   color: Colors.white,
                   letterSpacing: 0.5,
                 ),
               ),
               style: ElevatedButton.styleFrom(
-                backgroundColor: Colors.red[700],
+                backgroundColor: Colors.red.shade600,
+                foregroundColor: Colors.white,
                 elevation: 4,
-                shadowColor: Colors.red.withOpacity(0.4),
+                shadowColor: Colors.red.withOpacity(0.5),
                 shape: RoundedRectangleBorder(
                   borderRadius: BorderRadius.circular(16),
                 ),

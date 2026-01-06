@@ -22,6 +22,9 @@ import 'notifications_screen.dart';
 import 'participant_registration_form_screen.dart';
 import 'settings_screen.dart';
 import 'help_support_screen.dart';
+import 'polls_screen.dart';
+import '../models/poll.dart';
+import '../services/firebase_poll_service.dart';
 import '../services/theme_service.dart';
 
 class ParticipantDashboard extends StatefulWidget {
@@ -50,12 +53,16 @@ class _ParticipantDashboardState extends State<ParticipantDashboard> {
   bool _hasPendingOrganizerRequest = false;
   bool _showPastOnly = false;
   MealSettings? _mealSettings;
+  List<Poll> _activePolls = [];
+  Timer? _pollUpdateTimer;
 
   @override
   void initState() {
     super.initState();
     _searchDebouncer = Debouncer(delay: const Duration(milliseconds: 500));
     _initializeData();
+    // Load polls immediately
+    _loadActivePolls();
   }
 
   Future<void> _initializeData() async {
@@ -81,6 +88,7 @@ class _ParticipantDashboardState extends State<ParticipantDashboard> {
     _myEventsSubscription?.cancel();
     _notificationSubscription?.cancel();
     _mealSettingsSubscription?.cancel();
+    _pollUpdateTimer?.cancel();
     super.dispose();
   }
 
@@ -205,8 +213,31 @@ class _ParticipantDashboardState extends State<ParticipantDashboard> {
       
       // Set up listener for new event notifications
       _setupNotificationListener(userId);
-    } catch (e) {
+      
+      // Load active polls
+      _loadActivePolls();
+      
+      // Set up timer to refresh polls every minute
+      _pollUpdateTimer?.cancel();
+      _pollUpdateTimer = Timer.periodic(const Duration(minutes: 1), (_) {
+        _loadActivePolls();
+      });
+    } catch (e, stackTrace) {
       setState(() => _isLoading = false);
+    }
+  }
+  
+  Future<void> _loadActivePolls() async {
+    try {
+      final polls = await FirebasePollService.getAllPolls();
+      final active = polls.where((poll) => poll.isActive).toList();
+      if (mounted) {
+        setState(() {
+          _activePolls = active;
+        });
+      }
+    } catch (e) {
+      print('Error loading active polls: $e');
     }
   }
 
@@ -328,6 +359,10 @@ class _ParticipantDashboardState extends State<ParticipantDashboard> {
                 title = 'Registration Confirmed';
                 body = 'You have successfully registered for $eventTitle';
                 break;
+              case 'poll':
+                title = data['title'] as String? ?? '📊 New Poll';
+                body = data['body'] as String? ?? eventTitle;
+                break;
               default:
                 title = 'EventBridge';
                 body = data['body'] as String? ?? 'You have a new notification';
@@ -438,6 +473,10 @@ class _ParticipantDashboardState extends State<ParticipantDashboard> {
               case 'event_registration':
                 title = 'Registration Confirmed';
                 body = 'You have successfully registered for $eventTitle';
+                break;
+              case 'poll':
+                title = data['title'] as String? ?? '📊 New Poll';
+                body = data['body'] as String? ?? eventTitle;
                 break;
               default:
                 title = 'EventBridge';
@@ -559,6 +598,8 @@ class _ParticipantDashboardState extends State<ParticipantDashboard> {
 
   Future<void> _refreshData() async {
     await _loadData();
+    // Refresh polls
+    await _loadActivePolls();
     // Also check for pending organizer request status
     if (_currentUser != null) {
       final hasPending = await FirebaseUserService.hasPendingOrganizerRequest(_currentUser!.id);
@@ -1196,6 +1237,13 @@ class _ParticipantDashboardState extends State<ParticipantDashboard> {
             
             // Only show categories and categorized events if not searching
             if (!hasSearchQuery) ...[
+              // Flash Polls Quick Access - Dynamic
+              if (_activePolls.isNotEmpty)
+                _buildActivePollCard(isDark)
+              else
+                _buildNoPollsCard(isDark),
+              const SizedBox(height: 24),
+              
               // Categories
               Text(
                 'Categories',
@@ -1959,6 +2007,20 @@ class _ParticipantDashboardState extends State<ParticipantDashboard> {
                 ),
                 _buildDivider(),
                 _buildProfileOption(
+                  'Flash Polls',
+                  Icons.poll,
+                  Colors.purple,
+                  () {
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (context) => const PollsScreen(),
+                      ),
+                    );
+                  },
+                ),
+                _buildDivider(),
+                _buildProfileOption(
                   'Settings',
                   Icons.settings_outlined,
                   Colors.grey[700]!,
@@ -1993,7 +2055,7 @@ class _ParticipantDashboardState extends State<ParticipantDashboard> {
           // Logout Button
           SizedBox(
             width: double.infinity,
-            height: 50,
+            height: 56,
             child: ElevatedButton.icon(
               onPressed: () async {
                 // Show confirmation dialog
@@ -2013,7 +2075,8 @@ class _ParticipantDashboardState extends State<ParticipantDashboard> {
                       ElevatedButton(
                         onPressed: () => Navigator.pop(context, true),
                         style: ElevatedButton.styleFrom(
-                          backgroundColor: Colors.red,
+                          backgroundColor: Colors.red.shade600,
+                          foregroundColor: Colors.white,
                         ),
                         child: const Text('Logout'),
                       ),
@@ -2038,18 +2101,21 @@ class _ParticipantDashboardState extends State<ParticipantDashboard> {
                   }
                 }
               },
-              icon: const Icon(Icons.logout, size: 20),
+              icon: const Icon(Icons.logout_rounded, size: 22, color: Colors.white),
               label: const Text(
                 'Logout',
                 style: TextStyle(
-                  fontSize: 16,
-                  fontWeight: FontWeight.w600,
+                  fontSize: 17,
+                  fontWeight: FontWeight.bold,
+                  color: Colors.white,
+                  letterSpacing: 0.5,
                 ),
               ),
               style: ElevatedButton.styleFrom(
-                backgroundColor: Colors.red,
+                backgroundColor: Colors.red.shade600,
                 foregroundColor: Colors.white,
-                elevation: 2,
+                elevation: 4,
+                shadowColor: Colors.red.withOpacity(0.5),
                 shape: RoundedRectangleBorder(
                   borderRadius: BorderRadius.circular(16),
                 ),
@@ -2484,5 +2550,228 @@ class _ParticipantDashboardState extends State<ParticipantDashboard> {
       case EventStatus.cancelled:
         return Colors.red;
     }
+  }
+  
+  Widget _buildActivePollCard(bool isDark) {
+    final mostUrgentPoll = _activePolls.reduce((a, b) => 
+      a.timeRemaining.inMinutes < b.timeRemaining.inMinutes ? a : b
+    );
+    
+    final timeRemaining = mostUrgentPoll.timeRemaining;
+    final hours = timeRemaining.inHours;
+    final minutes = timeRemaining.inMinutes.remainder(60);
+    
+    String timeText;
+    Color timeColor;
+    
+    if (hours > 0) {
+      timeText = '⏱ ${hours}h ${minutes}m remaining';
+      timeColor = hours > 2 ? Colors.green : Colors.orange;
+    } else if (minutes > 5) {
+      timeText = '⏱ ${minutes}m remaining';
+      timeColor = Colors.orange;
+    } else {
+      timeText = '⏱ ${minutes}m remaining';
+      timeColor = Colors.red;
+    }
+    
+    return Container(
+      decoration: BoxDecoration(
+        gradient: LinearGradient(
+          colors: [
+            Colors.red.shade600,
+            Colors.orange.shade600,
+          ],
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+        ),
+        borderRadius: BorderRadius.circular(16),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.red.withOpacity(0.4),
+            blurRadius: 12,
+            offset: const Offset(0, 4),
+          ),
+        ],
+      ),
+      child: InkWell(
+        onTap: () {
+          Navigator.push(
+            context,
+            MaterialPageRoute(
+              builder: (context) => const PollsScreen(),
+            ),
+          );
+        },
+        borderRadius: BorderRadius.circular(16),
+        child: Padding(
+          padding: const EdgeInsets.all(16.0),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  Container(
+                    padding: const EdgeInsets.all(10),
+                    decoration: BoxDecoration(
+                      color: Colors.white.withOpacity(0.2),
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                    child: const Icon(
+                      Icons.poll,
+                      color: Colors.white,
+                      size: 24,
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Row(
+                          children: [
+                            const Text(
+                              'Flash Poll',
+                              style: TextStyle(
+                                fontSize: 15,
+                                fontWeight: FontWeight.bold,
+                                color: Colors.white,
+                              ),
+                            ),
+                            const SizedBox(width: 8),
+                            Container(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 8,
+                                vertical: 3,
+                              ),
+                              decoration: BoxDecoration(
+                                color: Colors.white.withOpacity(0.25),
+                                borderRadius: BorderRadius.circular(12),
+                              ),
+                              child: Text(
+                                '${_activePolls.length} Active',
+                                style: const TextStyle(
+                                  fontSize: 11,
+                                  fontWeight: FontWeight.w600,
+                                  color: Colors.white,
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 4),
+                        Text(
+                          mostUrgentPoll.question.length > 50
+                              ? '${mostUrgentPoll.question.substring(0, 50)}...'
+                              : mostUrgentPoll.question,
+                          style: const TextStyle(
+                            fontSize: 12,
+                            color: Colors.white70,
+                          ),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ],
+                    ),
+                  ),
+                  const Icon(
+                    Icons.arrow_forward_ios,
+                    size: 16,
+                    color: Colors.white70,
+                  ),
+                ],
+              ),
+              const SizedBox(height: 10),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                decoration: BoxDecoration(
+                  color: timeColor.withOpacity(0.2),
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(
+                    color: timeColor.withOpacity(0.5),
+                    width: 1,
+                  ),
+                ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(
+                      Icons.timer,
+                      size: 14,
+                      color: Colors.white,
+                    ),
+                    const SizedBox(width: 6),
+                    Text(
+                      timeText,
+                      style: const TextStyle(
+                        fontSize: 11,
+                        fontWeight: FontWeight.w600,
+                        color: Colors.white,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+  
+  Widget _buildNoPollsCard(bool isDark) {
+    return Container(
+      decoration: BoxDecoration(
+        color: isDark ? Colors.grey[850] : Colors.grey[100],
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(
+          color: isDark ? Colors.grey[700]! : Colors.grey[300]!,
+          width: 1,
+        ),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.all(16.0),
+        child: Row(
+          children: [
+            Container(
+              padding: const EdgeInsets.all(10),
+              decoration: BoxDecoration(
+                color: isDark ? Colors.grey[800] : Colors.grey[200],
+                borderRadius: BorderRadius.circular(10),
+              ),
+              child: Icon(
+                Icons.poll_outlined,
+                color: isDark ? Colors.grey[500] : Colors.grey[600],
+                size: 24,
+              ),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'No Active Polls',
+                    style: TextStyle(
+                      fontSize: 14,
+                      fontWeight: FontWeight.w600,
+                      color: isDark ? Colors.grey[300] : Colors.grey[700],
+                    ),
+                  ),
+                  const SizedBox(height: 2),
+                  Text(
+                    'Check back later for new polls',
+                    style: TextStyle(
+                      fontSize: 11,
+                      color: isDark ? Colors.grey[500] : Colors.grey[600],
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
   }
 }
