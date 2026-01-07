@@ -296,37 +296,34 @@ class _AuthScreenState extends State<AuthScreen> {
                         ),
                 ),
               ),
-              // Hide Google Sign-In on web until OAuth is configured
-              if (!kIsWeb) ...[
-                const SizedBox(height: 16),
-                Row(
-                  children: [
-                    Expanded(child: Divider(color: Colors.grey[300], thickness: 1.5)),
-                    Padding(
-                      padding: const EdgeInsets.symmetric(horizontal: 16),
-                      child: Text('OR', style: TextStyle(color: Colors.grey[600], fontWeight: FontWeight.w500)),
-                    ),
-                    Expanded(child: Divider(color: Colors.grey[300], thickness: 1.5)),
-                  ],
-                ),
-                const SizedBox(height: 16),
-                SizedBox(
-                  height: 56,
-                  child: OutlinedButton.icon(
-                    onPressed: _isLoading ? null : _handleGoogleSignIn,
-                    style: OutlinedButton.styleFrom(
-                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                      side: BorderSide(color: Colors.grey[300]!),
-                      backgroundColor: Colors.white,
-                    ),
-                    icon: const Icon(Icons.g_mobiledata, size: 32, color: Colors.blue),
-                    label: const Text(
-                      'Continue with Google',
-                      style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Colors.black87),
-                    ),
+              const SizedBox(height: 16),
+              Row(
+                children: [
+                  Expanded(child: Divider(color: Colors.grey[300], thickness: 1.5)),
+                  Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 16),
+                    child: Text('OR', style: TextStyle(color: Colors.grey[600], fontWeight: FontWeight.w500)),
+                  ),
+                  Expanded(child: Divider(color: Colors.grey[300], thickness: 1.5)),
+                ],
+              ),
+              const SizedBox(height: 16),
+              SizedBox(
+                height: 56,
+                child: OutlinedButton.icon(
+                  onPressed: _isLoading ? null : _handleGoogleSignIn,
+                  style: OutlinedButton.styleFrom(
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                    side: BorderSide(color: Colors.grey[300]!),
+                    backgroundColor: Colors.white,
+                  ),
+                  icon: const Icon(Icons.g_mobiledata, size: 32, color: Colors.blue),
+                  label: const Text(
+                    'Continue with Google',
+                    style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Colors.black87),
                   ),
                 ),
-              ],
+              ),
               const SizedBox(height: 24),
               Row(
                 mainAxisAlignment: MainAxisAlignment.center,
