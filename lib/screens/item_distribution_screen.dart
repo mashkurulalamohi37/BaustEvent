@@ -272,9 +272,10 @@ class _ItemDistributionScreenState extends State<ItemDistributionScreen> with Si
             labelColor: Colors.white,
             unselectedLabelColor: Colors.white70,
             indicatorColor: Colors.white,
+            labelPadding: const EdgeInsets.symmetric(vertical: 4),
             tabs: const [
-              Tab(icon: Icon(Icons.checklist), text: 'Distribution'),
-              Tab(icon: Icon(Icons.analytics), text: 'Summary'),
+              Tab(icon: Icon(Icons.checklist, size: 20), text: 'Distribution'),
+              Tab(icon: Icon(Icons.analytics, size: 20), text: 'Summary'),
             ],
           ),
         ),
@@ -327,7 +328,7 @@ class _ItemDistributionScreenState extends State<ItemDistributionScreen> with Si
     }
     
     return Container(
-      margin: const EdgeInsets.all(16),
+      margin: const EdgeInsets.fromLTRB(12, 10, 12, 8),
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.circular(12),
@@ -339,21 +340,21 @@ class _ItemDistributionScreenState extends State<ItemDistributionScreen> with Si
           ),
         ],
       ),
-      padding: const EdgeInsets.all(16),
+      padding: const EdgeInsets.all(12),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           const Text(
             'Select Item:',
-            style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+            style: TextStyle(fontWeight: FontWeight.w600, fontSize: 14),
           ),
-          const SizedBox(height: 8),
+          const SizedBox(height: 6),
           DropdownButtonFormField<EventItem>(
             value: _selectedItem,
             decoration: InputDecoration(
               isDense: true,
               border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
-              contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+              contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
             ),
             items: _items.map((item) {
               // Dynamic count for selected item
@@ -388,7 +389,7 @@ class _ItemDistributionScreenState extends State<ItemDistributionScreen> with Si
             },
           ),
           if (_selectedItem != null) ...[
-            const SizedBox(height: 12),
+            const SizedBox(height: 8),
             LinearProgressIndicator(
               value: progress,
               backgroundColor: Colors.grey[300],
@@ -398,10 +399,10 @@ class _ItemDistributionScreenState extends State<ItemDistributionScreen> with Si
                     : Theme.of(context).primaryColor,
               ),
             ),
-            const SizedBox(height: 4),
+            const SizedBox(height: 3),
             Text(
               '$remaining remaining',
-              style: const TextStyle(fontSize: 12, color: Colors.grey),
+              style: const TextStyle(fontSize: 11, color: Colors.grey),
             ),
           ],
         ],
