@@ -41,11 +41,14 @@ class _OrganizerDashboardState extends State<OrganizerDashboard> {
   StreamSubscription<List<Event>>? _eventsSubscription;
   StreamSubscription<QuerySnapshot>? _notificationSubscription;
   Set<String> _shownNotificationIds = {}; // Track which notifications we've already shown
+  Set<String> _localReadIds = {}; // Track broadcast notifications read locally
+  static const String _localReadIdsKey = 'local_read_notification_ids';
   bool _notificationInitialLoadComplete = false;
   SharedPreferences? _notificationPrefs;
   DateTime? _lastNotificationSeenAt;
   String? _activeNotificationUserId;
   static const String _notificationPrefsKeyPrefix = 'organizer_last_notification_seen_';
+  int _unreadNotificationCount = 0;
 
   @override
   void initState() {
@@ -194,6 +197,7 @@ class _OrganizerDashboardState extends State<OrganizerDashboard> {
       
       // Load notification preferences
       await _ensureNotificationPrefsLoaded(organizerId);
+      await _loadLocalReadState();
       
       // Set up listener for notifications
       _setupNotificationListener(organizerId);
@@ -234,6 +238,22 @@ class _OrganizerDashboardState extends State<OrganizerDashboard> {
     }
   }
   
+  Future<void> _loadLocalReadState() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final key = widget.userId != null ? '${_localReadIdsKey}_${widget.userId}' : _localReadIdsKey;
+      final storedIds = prefs.getStringList(key) ?? [];
+      if (mounted) {
+        setState(() {
+          _localReadIds = storedIds.toSet();
+        });
+      }
+    } catch (e) {
+      print('Error loading local read state: $e');
+    }
+  }
+  
+  
   // Set up listener for notifications from Firestore
   void _setupNotificationListener(String userId) {
     try {
@@ -243,11 +263,32 @@ class _OrganizerDashboardState extends State<OrganizerDashboard> {
       _notificationInitialLoadComplete = false;
       
       _notificationSubscription = notificationsCol
-          .where('read', isEqualTo: false)
           .orderBy('createdAt', descending: true)
+          .limit(50)
           .snapshots()
           .listen((snapshot) {
-        print('Organizer notification listener triggered: ${snapshot.docs.length} unread notifications');
+        // Update unread count
+        final unreadCount = snapshot.docs.where((doc) {
+           final data = doc.data();
+           final nUserId = data['userId'] as String?;
+           
+           // 1. Must be for me or broadcast
+           if (nUserId != null && nUserId != userId) return false;
+           
+           // 2. Must be unread in Firestore
+           if (data['read'] == true) return false;
+           
+           // 3. If broadcast, must not be read locally
+           if (nUserId == null && _localReadIds.contains(doc.id)) return false;
+           
+           return true;
+        }).length;
+
+        if (mounted) {
+           setState(() => _unreadNotificationCount = unreadCount);
+        }
+
+        print('Organizer notification listener triggered: $unreadCount unread notifications');
         
         // Bootstrap - skip all existing notifications on first load
         if (!_notificationInitialLoadComplete) {
@@ -376,7 +417,11 @@ class _OrganizerDashboardState extends State<OrganizerDashboard> {
           title: const Text('EventBridge - Organizer'),
           actions: [
           IconButton(
-            icon: const Icon(Icons.notifications_outlined),
+            icon: Badge(
+              label: Text('$_unreadNotificationCount'),
+              isLabelVisible: _unreadNotificationCount > 0,
+              child: const Icon(Icons.notifications_outlined),
+            ),
             onPressed: () {
               Navigator.push(
                 context,
