@@ -306,7 +306,7 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
                   },
                   child: ListView.builder(
                     cacheExtent: 500,
-                    padding: const EdgeInsets.all(16.0),
+                    padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
                     itemCount: _notifications.length,
                     itemBuilder: (context, index) {
                       final notification = _notifications[index];
@@ -320,35 +320,45 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
                       
                       final isDark = Theme.of(context).brightness == Brightness.dark;
 
-
-                      // Define colors based on states
+                      // Elegant color scheme
                       final bgColor = isRead 
-                          ? (isDark ? const Color(0xFF1E1E1E) : const Color(0xFFF8F9FA)) // Light Grey for Read
-                          : (isDark ? const Color(0xFF1A2733) : const Color(0xFFEDF7FF)); // Light Blue for Unread
+                          ? (isDark ? const Color(0xFF1C1C1E) : Colors.white)
+                          : (isDark ? const Color(0xFF1A2332) : const Color(0xFFF0F7FF));
                       
-                      final borderColor = isRead
-                          ? (isDark ? Colors.white10 : Colors.grey.shade300) // Visible Grey border for Read
-                          : (isDark ? Colors.blue.withValues(alpha: 0.3) : Colors.blue.shade200); // Blue border for Unread
-
+                      final accentColor = _getNotificationColor(type);
+                      
                       return Container(
-                        margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8), // More side spacing
+                        margin: const EdgeInsets.only(bottom: 12),
                         decoration: BoxDecoration(
                           color: bgColor,
-                          borderRadius: BorderRadius.circular(16),
-                          border: Border.all(color: borderColor, width: 1.5), // Thicker border
+                          borderRadius: BorderRadius.circular(20),
+                          border: isRead 
+                              ? null
+                              : Border.all(
+                                  color: accentColor.withOpacity(0.2),
+                                  width: 1.5,
+                                ),
                           boxShadow: [
-                            if (!isRead) // Only unread gets a shadow glow
+                            BoxShadow(
+                              color: isDark 
+                                  ? Colors.black.withOpacity(0.3)
+                                  : Colors.black.withOpacity(0.08),
+                              blurRadius: isRead ? 8 : 16,
+                              offset: const Offset(0, 4),
+                              spreadRadius: isRead ? 0 : 2,
+                            ),
+                            if (!isRead && !isDark)
                               BoxShadow(
-                                color: Colors.blue.withValues(alpha: 0.15),
-                                blurRadius: 12,
-                                offset: const Offset(0, 4),
+                                color: accentColor.withOpacity(0.1),
+                                blurRadius: 20,
+                                offset: const Offset(0, 8),
                               ),
                           ],
                         ),
                         child: Material(
                           color: Colors.transparent,
                           child: InkWell(
-                            borderRadius: BorderRadius.circular(16),
+                            borderRadius: BorderRadius.circular(20),
                             onTap: () async {
                               if (!isRead) {
                                 await _markAsRead(notification['id'], isBroadcast);
@@ -368,22 +378,33 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
                               }
                             },
                             child: Padding(
-                              padding: const EdgeInsets.all(16.0),
+                              padding: const EdgeInsets.all(18.0),
                               child: Row(
                                 crossAxisAlignment: CrossAxisAlignment.start,
                                 children: [
-                                  // Icon - Always colorful
+                                  // Elegant Icon Container
                                   Container(
-                                    width: 48,
-                                    height: 48,
+                                    width: 56,
+                                    height: 56,
                                     decoration: BoxDecoration(
-                                      color: _getNotificationColor(type).withValues(alpha: 0.15), // Always colored bg
+                                      gradient: LinearGradient(
+                                        begin: Alignment.topLeft,
+                                        end: Alignment.bottomRight,
+                                        colors: [
+                                          accentColor.withOpacity(0.15),
+                                          accentColor.withOpacity(0.08),
+                                        ],
+                                      ),
                                       shape: BoxShape.circle,
+                                      border: Border.all(
+                                        color: accentColor.withOpacity(0.2),
+                                        width: 1.5,
+                                      ),
                                     ),
                                     child: Icon(
                                       _getNotificationIcon(type),
-                                      color: _getNotificationColor(type), // Always colored icon
-                                      size: 24,
+                                      color: accentColor,
+                                      size: 26,
                                     ),
                                   ),
                                   const SizedBox(width: 16),
@@ -393,42 +414,42 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
                                     child: Column(
                                       crossAxisAlignment: CrossAxisAlignment.start,
                                       children: [
-                                        // Top Row: Title + Time
+                                        // Title Row
                                         Row(
-                                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                                          crossAxisAlignment: CrossAxisAlignment.start,
                                           children: [
                                             Expanded(
                                               child: Text(
                                                 _getNotificationTitle(notification),
                                                 style: TextStyle(
-                                                  fontWeight: FontWeight.bold, // Always bold title
+                                                  fontWeight: FontWeight.w700,
                                                   fontSize: 16,
+                                                  letterSpacing: -0.3,
                                                   color: isDark 
                                                       ? Colors.white 
-                                                      : (isRead ? const Color(0xFF2D3436) : const Color(0xFF0056D2)),
-                                                  height: 1.2,
+                                                      : (isRead ? const Color(0xFF1D1D1F) : accentColor),
+                                                  height: 1.3,
                                                 ),
                                               ),
                                             ),
-                                            if (date != null) ...[
-                                              const SizedBox(width: 8),
+                                            if (!isRead)
                                               Container(
-                                                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                                                width: 10,
+                                                height: 10,
+                                                margin: const EdgeInsets.only(left: 12),
                                                 decoration: BoxDecoration(
-                                                  color: isDark ? Colors.white10 : Colors.black.withValues(alpha: 0.05),
-                                                  borderRadius: BorderRadius.circular(8),
-                                                ),
-                                                child: Text(
-                                                  DateFormat('MMM d').format(date),
-                                                  style: TextStyle(
-                                                    fontSize: 11,
-                                                    color: isDark ? Colors.grey[400] : Colors.grey[700],
-                                                    fontWeight: FontWeight.w600,
+                                                  gradient: LinearGradient(
+                                                    colors: [accentColor, accentColor.withOpacity(0.7)],
                                                   ),
+                                                  shape: BoxShape.circle,
+                                                  boxShadow: [
+                                                    BoxShadow(
+                                                      color: accentColor.withOpacity(0.4),
+                                                      blurRadius: 8,
+                                                      spreadRadius: 1,
+                                                    ),
+                                                  ],
                                                 ),
                                               ),
-                                            ],
                                           ],
                                         ),
                                         const SizedBox(height: 8),
@@ -437,27 +458,62 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
                                         Text(
                                           _getNotificationBody(notification),
                                           style: TextStyle(
-                                            color: isDark ? Colors.grey[400] : Colors.grey[800], // Darker text
+                                            color: isDark 
+                                                ? Colors.grey[400] 
+                                                : const Color(0xFF6E6E73),
                                             fontSize: 14,
-                                            height: 1.4,
+                                            height: 1.5,
+                                            letterSpacing: -0.1,
                                           ),
-                                          maxLines: 3,
+                                          maxLines: 2,
                                           overflow: TextOverflow.ellipsis,
                                         ),
                                         
-                                        // Time detail
+                                        // Date and Time
                                         if (date != null) ...[
-                                          const SizedBox(height: 8),
+                                          const SizedBox(height: 10),
                                           Row(
                                             children: [
-                                              Icon(Icons.access_time, size: 14, color: Colors.grey[600]),
-                                              const SizedBox(width: 4),
-                                              Text(
-                                                DateFormat('h:mm a').format(date),
-                                                style: TextStyle(
-                                                  fontSize: 12,
-                                                  color: isDark ? Colors.grey[500] : Colors.grey[600],
-                                                  fontWeight: FontWeight.w500,
+                                              Container(
+                                                padding: const EdgeInsets.symmetric(
+                                                  horizontal: 10,
+                                                  vertical: 5,
+                                                ),
+                                                decoration: BoxDecoration(
+                                                  color: isDark 
+                                                      ? Colors.white.withOpacity(0.05)
+                                                      : accentColor.withOpacity(0.08),
+                                                  borderRadius: BorderRadius.circular(8),
+                                                  border: Border.all(
+                                                    color: isDark
+                                                        ? Colors.white.withOpacity(0.1)
+                                                        : accentColor.withOpacity(0.15),
+                                                    width: 1,
+                                                  ),
+                                                ),
+                                                child: Row(
+                                                  mainAxisSize: MainAxisSize.min,
+                                                  children: [
+                                                    Icon(
+                                                      Icons.access_time_rounded,
+                                                      size: 13,
+                                                      color: isDark
+                                                          ? Colors.grey[500]
+                                                          : accentColor.withOpacity(0.7),
+                                                    ),
+                                                    const SizedBox(width: 5),
+                                                    Text(
+                                                      '${DateFormat('MMM d').format(date)} • ${DateFormat('h:mm a').format(date)}',
+                                                      style: TextStyle(
+                                                        fontSize: 12,
+                                                        fontWeight: FontWeight.w600,
+                                                        letterSpacing: -0.2,
+                                                        color: isDark
+                                                            ? Colors.grey[400]
+                                                            : accentColor.withOpacity(0.8),
+                                                      ),
+                                                    ),
+                                                  ],
                                                 ),
                                               ),
                                             ],
@@ -466,13 +522,6 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
                                       ],
                                     ),
                                   ),
-                                  
-                                  // Unread Dot
-                                  if (!isRead)
-                                    Padding(
-                                      padding: const EdgeInsets.only(left: 8, top: 2),
-                                      child: Icon(Icons.circle, color: Colors.blue[700], size: 12),
-                                    ),
                                 ],
                               ),
                             ),
