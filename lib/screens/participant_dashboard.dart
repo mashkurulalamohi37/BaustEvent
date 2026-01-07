@@ -75,6 +75,8 @@ class _ParticipantDashboardState extends State<ParticipantDashboard> {
   StreamSubscription<QuerySnapshot>? _notificationSubscription;
   StreamSubscription<MealSettings>? _mealSettingsSubscription;
   final Set<String> _shownNotificationIds = {}; // Track which notifications we've already shown
+  Set<String> _localReadIds = {}; // Track broadcast notifications read locally
+  static const String _localReadIdsKey = 'local_read_notification_ids';
   bool _notificationInitialLoadComplete = false;
   SharedPreferences? _notificationPrefs;
   DateTime? _lastNotificationSeenAt;
@@ -91,6 +93,21 @@ class _ParticipantDashboardState extends State<ParticipantDashboard> {
     _mealSettingsSubscription?.cancel();
     _pollUpdateTimer?.cancel();
     super.dispose();
+  }
+
+  Future<void> _loadLocalReadState() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final key = widget.userId != null ? '${_localReadIdsKey}_${widget.userId}' : _localReadIdsKey;
+      final storedIds = prefs.getStringList(key) ?? [];
+      if (mounted) {
+        setState(() {
+          _localReadIds = storedIds.toSet();
+        });
+      }
+    } catch (e) {
+      print('Error loading local read state: $e');
+    }
   }
 
   Future<void> _loadData() async {
@@ -129,6 +146,7 @@ class _ParticipantDashboardState extends State<ParticipantDashboard> {
       // Determine user ID for events - prioritize widget.userId since it's from auth
       final userId = _resolveUserId(user);
       await _ensureNotificationPrefsLoaded(userId);
+      await _loadLocalReadState();
       
       print('Setting up streams for userId: $userId');
       
@@ -294,15 +312,25 @@ class _ParticipantDashboardState extends State<ParticipantDashboard> {
       _notificationInitialLoadComplete = false;
       
       _notificationSubscription = notificationsCol
-          .where('read', isEqualTo: false)
           .orderBy('createdAt', descending: true)
+          .limit(50)
           .snapshots()
           .listen((snapshot) {
         // Update unread count
         final unreadCount = snapshot.docs.where((doc) {
            final data = doc.data();
            final nUserId = data['userId'] as String?;
-           return nUserId == null || nUserId == userId;
+           
+           // 1. Must be for me or broadcast
+           if (nUserId != null && nUserId != userId) return false;
+           
+           // 2. Must be unread in Firestore
+           if (data['read'] == true) return false;
+           
+           // 3. If broadcast, must not be read locally
+           if (nUserId == null && _localReadIds.contains(doc.id)) return false;
+           
+           return true;
         }).length;
 
         if (mounted) {
@@ -431,7 +459,11 @@ class _ParticipantDashboardState extends State<ParticipantDashboard> {
         final unreadCount = snapshot.docs.where((doc) {
            final data = doc.data();
            final nUserId = data['userId'] as String?;
-           return nUserId == null || nUserId == userId;
+           
+           if (nUserId != null && nUserId != userId) return false;
+           if (nUserId == null && _localReadIds.contains(doc.id)) return false;
+           
+           return true;
         }).length;
 
         if (mounted) {
@@ -630,6 +662,7 @@ class _ParticipantDashboardState extends State<ParticipantDashboard> {
   }
 
   Future<void> _refreshData() async {
+    await _loadLocalReadState();
     await _loadData();
     // Refresh polls
     await _loadActivePolls();
