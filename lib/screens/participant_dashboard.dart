@@ -55,6 +55,7 @@ class _ParticipantDashboardState extends State<ParticipantDashboard> {
   MealSettings? _mealSettings;
   List<Poll> _activePolls = [];
   Timer? _pollUpdateTimer;
+  int _unreadNotificationCount = 0;
 
   @override
   void initState() {
@@ -297,6 +298,17 @@ class _ParticipantDashboardState extends State<ParticipantDashboard> {
           .orderBy('createdAt', descending: true)
           .snapshots()
           .listen((snapshot) {
+        // Update unread count
+        final unreadCount = snapshot.docs.where((doc) {
+           final data = doc.data();
+           final nUserId = data['userId'] as String?;
+           return nUserId == null || nUserId == userId;
+        }).length;
+
+        if (mounted) {
+           setState(() => _unreadNotificationCount = unreadCount);
+        }
+
         print('Notification listener triggered: ${snapshot.docs.length} unread notifications');
         
         if (!_notificationInitialLoadComplete) {
@@ -415,6 +427,17 @@ class _ParticipantDashboardState extends State<ParticipantDashboard> {
           .where('read', isEqualTo: false)
           .snapshots()
           .listen((snapshot) {
+        // Update unread count
+        final unreadCount = snapshot.docs.where((doc) {
+           final data = doc.data();
+           final nUserId = data['userId'] as String?;
+           return nUserId == null || nUserId == userId;
+        }).length;
+
+        if (mounted) {
+           setState(() => _unreadNotificationCount = unreadCount);
+        }
+
         print('Fallback notification listener triggered: ${snapshot.docs.length} unread notifications');
         
         if (!_notificationInitialLoadComplete) {
@@ -980,7 +1003,11 @@ class _ParticipantDashboardState extends State<ParticipantDashboard> {
           title: const Text('EventBridge'),
           actions: [
           IconButton(
-            icon: const Icon(Icons.notifications_outlined),
+            icon: Badge(
+              label: Text('$_unreadNotificationCount'),
+              isLabelVisible: _unreadNotificationCount > 0,
+              child: const Icon(Icons.notifications_outlined),
+            ),
             onPressed: () {
               Navigator.push(
                 context,
