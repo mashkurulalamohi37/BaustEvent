@@ -251,6 +251,12 @@ class FirebaseUserService {
       if (googleUser == null) return null; // User canceled
 
       final googleAuth = await googleUser.authentication;
+      
+      // Add null checks for tokens (especially important for web)
+      if (googleAuth.accessToken == null && googleAuth.idToken == null) {
+        throw Exception('Failed to get authentication tokens from Google');
+      }
+      
       final credential = firebase_auth.GoogleAuthProvider.credential(
         accessToken: googleAuth.accessToken,
         idToken: googleAuth.idToken,
