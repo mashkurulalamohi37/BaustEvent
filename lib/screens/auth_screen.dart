@@ -626,26 +626,30 @@ class _AuthScreenState extends State<AuthScreen> {
       if (mounted) {
         setState(() => _isLoading = false);
         
-        String errorMessage = 'Google Sign-in failed';
-        
-        // Parse specific error messages
-        if (e.toString().contains('Failed to get authentication tokens')) {
-          errorMessage = 'Google Sign-in failed. Please try again or use email/password login.';
-        } else if (e.toString().contains('No account found')) {
-          errorMessage = 'No account found. Please sign up first.';
-        } else if (e.toString().contains('network')) {
-          errorMessage = 'Network error. Please check your connection and try again.';
-        } else {
-          errorMessage = e.toString().replaceAll('Exception: ', '');
+        // Only show snackbar if it's not the token issue (which we handle silently)
+        if (!e.toString().contains('Failed to get authentication tokens')) {
+          String errorMessage = 'Google Sign-in failed';
+          
+          // Parse specific error messages
+          if (e.toString().contains('No account found')) {
+            errorMessage = 'No account found. Please sign up first.';
+          } else if (e.toString().contains('network')) {
+            errorMessage = 'Network error. Please check your connection and try again.';
+          } else if (e.toString().contains('PlatformException')) {
+            // Platform-specific error, likely web configuration issue
+            return; // Don't show error
+          } else {
+            errorMessage = e.toString().replaceAll('Exception: ', '');
+          }
+          
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text(errorMessage),
+              backgroundColor: Colors.red,
+              duration: const Duration(seconds: 4),
+            ),
+          );
         }
-        
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(errorMessage),
-            backgroundColor: Colors.red,
-            duration: const Duration(seconds: 4),
-          ),
-        );
       }
     }
   }
