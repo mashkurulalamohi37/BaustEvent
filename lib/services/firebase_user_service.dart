@@ -469,6 +469,11 @@ class FirebaseUserService {
 
   // Sign out
   static Future<void> signOut() async {
+    try {
+      await GoogleSignIn().signOut();
+    } catch (e) {
+      print('Error signing out from Google: $e');
+    }
     await _auth.signOut();
   }
 
