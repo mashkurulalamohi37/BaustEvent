@@ -63,7 +63,7 @@ class _AuthScreenState extends State<AuthScreen> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              const SizedBox(height: 20),
+              const SizedBox(height: 8),
               Text(
                 isLogin ? 'Welcome Back!' : 'Create Account',
                 style: const TextStyle(
@@ -73,7 +73,7 @@ class _AuthScreenState extends State<AuthScreen> {
                 ),
                 textAlign: TextAlign.center,
               ),
-              const SizedBox(height: 8),
+              const SizedBox(height: 6),
               Text(
                 isLogin
                     ? 'Sign in to continue to EventBridge'
@@ -84,7 +84,7 @@ class _AuthScreenState extends State<AuthScreen> {
                 ),
                 textAlign: TextAlign.center,
               ),
-              const SizedBox(height: 40),
+              const SizedBox(height: 24),
               if (!isLogin) ...[
                 // Role picker
                 DropdownButtonFormField<UserType>(
