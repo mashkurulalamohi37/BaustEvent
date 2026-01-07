@@ -579,7 +579,7 @@ class _AuthScreenState extends State<AuthScreen> {
     setState(() => _isLoading = true);
 
     try {
-      final user = await FirebaseUserService.signInWithGoogle();
+      final user = await FirebaseUserService.signInWithGoogle(isLoginMode: isLogin);
       
       if (user != null && mounted) {
            Navigator.pushReplacement(

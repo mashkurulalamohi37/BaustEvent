@@ -239,7 +239,7 @@ class FirebaseUserService {
     }
   }
 
-  static Future<User?> signInWithGoogle() async {
+  static Future<User?> signInWithGoogle({bool isLoginMode = false}) async {
     try {
       final googleSignIn = GoogleSignIn();
       final googleUser = await googleSignIn.signIn();
@@ -279,6 +279,13 @@ class FirebaseUserService {
           });
         }
       } else {
+        if (isLoginMode) {
+          // If trying to login but no account exists, prevent access
+          await googleSignIn.signOut();
+          await _auth.signOut();
+          throw Exception('No account found. Please sign up first.');
+        }
+
         // Create new user
         appUser = User(
             id: fbUser.uid,
