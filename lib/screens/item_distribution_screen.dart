@@ -1013,11 +1013,72 @@ class _ItemDistributionScreenState extends State<ItemDistributionScreen> with Si
     final confirm = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: const Text('Confirm Bulk Mark'),
-        content: Text('Mark ${toMark.length} participants as distributed? This will process in the background.'),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        title: Row(
+          children: [
+            Container(
+              padding: const EdgeInsets.all(8),
+              decoration: BoxDecoration(
+                color: Colors.blue.shade50,
+                borderRadius: BorderRadius.circular(10),
+              ),
+              child: Icon(Icons.check_circle_outline, color: Colors.blue.shade700, size: 24),
+            ),
+            const SizedBox(width: 12),
+            const Text(
+              'Confirm Bulk Mark',
+              style: TextStyle(
+                fontSize: 18,
+                fontWeight: FontWeight.bold,
+                letterSpacing: -0.3,
+              ),
+            ),
+          ],
+        ),
+        content: Padding(
+          padding: const EdgeInsets.symmetric(vertical: 8),
+          child: Text(
+            'Mark ${toMark.length} participants as distributed? This will process in the background.',
+            style: TextStyle(
+              fontSize: 14,
+              height: 1.5,
+              color: Colors.grey.shade700,
+            ),
+          ),
+        ),
+        actionsPadding: const EdgeInsets.fromLTRB(24, 0, 24, 20),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancel')),
-          ElevatedButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('Confirm')),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: Text(
+              'Cancel',
+              style: TextStyle(
+                fontSize: 15,
+                fontWeight: FontWeight.w500,
+                color: Colors.grey.shade600,
+              ),
+            ),
+          ),
+          const SizedBox(width: 8),
+          ElevatedButton.icon(
+            onPressed: () => Navigator.pop(ctx, true),
+            icon: const Icon(Icons.check, size: 18),
+            label: const Text('Confirm'),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Colors.blue.shade700,
+              foregroundColor: Colors.white,
+              padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+              textStyle: const TextStyle(
+                fontSize: 15,
+                fontWeight: FontWeight.bold,
+                letterSpacing: 0.3,
+              ),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(10),
+              ),
+              elevation: 2,
+            ),
+          ),
         ],
       ),
     );
