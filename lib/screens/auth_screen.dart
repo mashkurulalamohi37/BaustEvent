@@ -360,6 +360,13 @@ class _AuthScreenState extends State<AuthScreen> {
                   ),
                 ],
               ),
+              const SizedBox(height: 20),
+              if (kIsWeb)
+                const Text(
+                  'v1.1 (Web Fixed)',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(color: Colors.grey, fontSize: 11),
+                ),
             ],
           ),
         ),
