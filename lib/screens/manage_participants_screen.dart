@@ -2056,11 +2056,13 @@ class _ManageParticipantsScreenState extends State<ManageParticipantsScreen> {
                     Expanded(
                       child: OutlinedButton.icon(
                         onPressed: () => _rejectPendingRegistration(user, pendingInfo),
-                        icon: const Icon(Icons.close, color: Colors.red),
+                        icon: const Icon(Icons.close, size: 18, color: Colors.red),
                         label: const Text('Reject'),
                         style: OutlinedButton.styleFrom(
                           foregroundColor: Colors.red,
-                          side: const BorderSide(color: Colors.red),
+                          side: const BorderSide(color: Colors.red, width: 1.5),
+                          padding: const EdgeInsets.symmetric(vertical: 12),
+                          textStyle: const TextStyle(fontSize: 14, fontWeight: FontWeight.w600),
                         ),
                       ),
                     ),
@@ -2068,11 +2070,19 @@ class _ManageParticipantsScreenState extends State<ManageParticipantsScreen> {
                     Expanded(
                       child: ElevatedButton.icon(
                         onPressed: () => _approvePendingRegistration(user, pendingInfo),
-                        icon: const Icon(Icons.check),
+                        icon: const Icon(Icons.check_circle, size: 20),
                         label: const Text('Approve'),
                         style: ElevatedButton.styleFrom(
-                          backgroundColor: Colors.green,
+                          backgroundColor: const Color(0xFF4CAF50),
                           foregroundColor: Colors.white,
+                          padding: const EdgeInsets.symmetric(vertical: 14),
+                          textStyle: const TextStyle(
+                            fontSize: 15,
+                            fontWeight: FontWeight.bold,
+                            letterSpacing: 0.5,
+                          ),
+                          elevation: 3,
+                          shadowColor: Colors.green.withOpacity(0.4),
                         ),
                       ),
                     ),
