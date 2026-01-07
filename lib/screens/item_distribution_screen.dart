@@ -706,18 +706,37 @@ class _ItemDistributionScreenState extends State<ItemDistributionScreen> with Si
         return Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
+            // Add spacing between batches
+            if (i > 0) const SizedBox(height: 16),
+            if (i > 0) Divider(thickness: 2, color: Colors.grey.shade300, height: 1),
+            if (i > 0) const SizedBox(height: 16),
+            
+            // Batch Header with Button
             Container(
               width: double.infinity,
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-              color: Colors.blue.shade50,
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+              decoration: BoxDecoration(
+                gradient: LinearGradient(
+                  colors: [Colors.blue.shade100, Colors.blue.shade50],
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
+                ),
+                border: Border(
+                  left: BorderSide(color: Colors.blue.shade700, width: 4),
+                ),
+              ),
               child: Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
                    Text(
                     'Batch $batch',
-                    style: TextStyle(fontWeight: FontWeight.bold, color: Colors.blue.shade900),
+                    style: TextStyle(
+                      fontWeight: FontWeight.bold,
+                      fontSize: 16,
+                      color: Colors.blue.shade900,
+                    ),
                    ),
-                   TextButton(
+                   ElevatedButton.icon(
                      onPressed: () {
                         // Gather all participants in this batch
                         final allInBatch = <Map<String, dynamic>>[];
@@ -726,7 +745,17 @@ class _ItemDistributionScreenState extends State<ItemDistributionScreen> with Si
                         }
                         _markListAsDistributed(allInBatch);
                      },
-                     child: const Text('Mark Batch'),
+                     icon: const Icon(Icons.check_circle, size: 18),
+                     label: const Text('Mark Batch'),
+                     style: ElevatedButton.styleFrom(
+                       backgroundColor: Colors.blue.shade700,
+                       foregroundColor: Colors.white,
+                       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                       textStyle: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600),
+                       shape: RoundedRectangleBorder(
+                         borderRadius: BorderRadius.circular(8),
+                       ),
+                     ),
                    ),
                 ],
               ),
@@ -736,20 +765,40 @@ class _ItemDistributionScreenState extends State<ItemDistributionScreen> with Si
                return Column(
                  crossAxisAlignment: CrossAxisAlignment.start,
                  children: [
-                   Padding(
-                     padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+                   // Section Header with Button
+                   Container(
+                     margin: const EdgeInsets.only(top: 8),
+                     padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                     decoration: BoxDecoration(
+                       color: Colors.grey.shade100,
+                       border: Border(
+                         left: BorderSide(color: Colors.grey.shade400, width: 3),
+                       ),
+                     ),
                      child: Row(
                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
                        children: [
-                         Text('Section $section', style: const TextStyle(fontWeight: FontWeight.w600, color: Colors.grey)),
-                         TextButton(
-                           onPressed: () => _markListAsDistributed(sectionPs),
-                           style: TextButton.styleFrom(
-                             padding: EdgeInsets.zero,
-                             minimumSize: const Size(50, 30),
-                             tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                         Text(
+                           'Section $section',
+                           style: TextStyle(
+                             fontWeight: FontWeight.w600,
+                             fontSize: 14,
+                             color: Colors.grey.shade700,
                            ),
-                           child: const Text('Mark Section', style: TextStyle(fontSize: 12)),
+                         ),
+                         ElevatedButton.icon(
+                           onPressed: () => _markListAsDistributed(sectionPs),
+                           icon: const Icon(Icons.done_all, size: 16),
+                           label: const Text('Mark Section'),
+                           style: ElevatedButton.styleFrom(
+                             backgroundColor: Colors.grey.shade600,
+                             foregroundColor: Colors.white,
+                             padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                             textStyle: const TextStyle(fontSize: 11, fontWeight: FontWeight.w600),
+                             shape: RoundedRectangleBorder(
+                               borderRadius: BorderRadius.circular(6),
+                             ),
+                           ),
                          ),
                        ],
                      ),
