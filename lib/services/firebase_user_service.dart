@@ -239,7 +239,12 @@ class FirebaseUserService {
     }
   }
 
-  static Future<User?> signInWithGoogle({bool isLoginMode = false}) async {
+  static Future<User?> signInWithGoogle({
+    bool isLoginMode = false,
+    String? name,
+    String? universityId,
+    UserType? type,
+  }) async {
     try {
       final googleSignIn = GoogleSignIn();
       final googleUser = await googleSignIn.signIn();
@@ -286,27 +291,43 @@ class FirebaseUserService {
           throw Exception('No account found. Please sign up first.');
         }
 
-        // Create new user
+        // Create new user using passed details or Google defaults
+        final requestedType = type ?? UserType.participant;
+        final actualType = requestedType == UserType.organizer ? UserType.participant : requestedType;
+        
+        final finalName = (name != null && name.isNotEmpty) ? name : (fbUser.displayName ?? 'Google User');
+        final finalUniId = (universityId != null && universityId.isNotEmpty) ? universityId : '';
+
         appUser = User(
             id: fbUser.uid,
             email: fbUser.email ?? '',
-            name: fbUser.displayName ?? 'Google User',
-            universityId: '', 
-            type: UserType.participant,
+            name: finalName,
+            universityId: finalUniId,
+            type: actualType,
             profileImageUrl: fbUser.photoURL,
             createdAt: DateTime.now(),
             lastLoginAt: DateTime.now(),
         );
         
         await _usersCol.doc(appUser.id).set({
-          'email': appUser.email,
+          'email': appUser.email.toLowerCase(),
           'name': appUser.name,
           'universityId': appUser.universityId,
-          'type': 'participant',
+          'type': appUser.type.name,
           'profileImageUrl': appUser.profileImageUrl,
           'createdAt': appUser.createdAt.toIso8601String(),
           'lastLoginAt': appUser.lastLoginAt?.toIso8601String(),
         });
+
+        // Handle Organizer Request
+        if (requestedType == UserType.organizer) {
+          try {
+            await Future.delayed(const Duration(milliseconds: 500));
+            await createOrganizerRequest(appUser.id, appUser.email, appUser.name, appUser.universityId);
+          } catch (e) {
+             print("Error creating organizer request: $e");
+          }
+        }
       }
       
       // Cache user
