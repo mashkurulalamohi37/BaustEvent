@@ -1320,6 +1320,9 @@ class _ManageParticipantsScreenState extends State<ManageParticipantsScreen> {
                     ),
                   ),
                 
+                  // Requirement Stats
+                  _buildRequirementStats(),
+
                   // Tab Bar
                   TabBar(
                     labelPadding: const EdgeInsets.symmetric(horizontal: 8),
@@ -1408,11 +1411,93 @@ class _ManageParticipantsScreenState extends State<ManageParticipantsScreen> {
             ),
           floatingActionButton: FloatingActionButton(
             onPressed: _showQRScanner,
-            child: const Icon(Icons.qr_code_scanner),
             tooltip: 'Scan QR Code',
+            child: const Icon(Icons.qr_code_scanner),
           ),
         ),
     );
+  }
+
+  Widget _buildRequirementStats() {
+    final participants = _getFilteredParticipants();
+    if (participants.isEmpty) return const SizedBox.shrink();
+
+    final hasActiveFilter = _selectedHall != null || _selectedGender != null || 
+        _selectedBatch != null || _selectedFood != null || _selectedTshirtSize != null;
+        
+    if (!hasActiveFilter && !_showFilters) return const SizedBox.shrink();
+    
+    final foodCounts = <String, int>{};
+    final shirtCounts = <String, int>{};
+    int total = participants.length;
+    
+    for (var p in participants) {
+        final info = _participantInfo[p.id];
+        final food = info?.foodPreference?.trim();
+        final shirt = info?.tshirtSize?.trim();
+        
+        if (food != null && food.isNotEmpty) {
+           foodCounts[food] = (foodCounts[food] ?? 0) + 1;
+        }
+        if (shirt != null && shirt.isNotEmpty) {
+           shirtCounts[shirt] = (shirtCounts[shirt] ?? 0) + 1;
+        }
+    }
+    
+    final sortedFood = foodCounts.keys.toList()..sort();
+    final sortedShirt = shirtCounts.keys.toList()..sort();
+    
+    if (sortedFood.isEmpty && sortedShirt.isEmpty) {
+        // Just show total if no breakdown available
+       return Container(
+          width: double.infinity,
+          color: Colors.blue.shade50,
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+          child: Text('Filtered Result: $total participants', style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.blue)),
+       );
+    }
+
+    return Container(
+      width: double.infinity,
+      color: Colors.blue.shade50,
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+           Text('Filtered Result: $total participants', style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.blue)),
+           const SizedBox(height: 8),
+           if (sortedFood.isNotEmpty) ...[
+               const Text('Food Preferences:', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: Colors.grey)),
+               const SizedBox(height: 4),
+               Wrap(
+                 spacing: 8, runSpacing: 4,
+                 children: sortedFood.map((k) => _buildStatChip('$k: ${foodCounts[k]}')).toList(),
+               ),
+               const SizedBox(height: 8),
+           ],
+           if (sortedShirt.isNotEmpty) ...[
+               const Text('T-Shirt Sizes:', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: Colors.grey)),
+               const SizedBox(height: 4),
+               Wrap(
+                 spacing: 8, runSpacing: 4,
+                 children: sortedShirt.map((k) => _buildStatChip('$k: ${shirtCounts[k]}')).toList(),
+               ),
+           ]
+        ],
+      )
+    );
+  }
+  
+  Widget _buildStatChip(String label) {
+     return Container(
+       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+       decoration: BoxDecoration(
+         color: Colors.white,
+         borderRadius: BorderRadius.circular(12),
+         border: Border.all(color: Colors.blue.shade100),
+       ),
+       child: Text(label, style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
+     );
   }
 
   Widget _buildGroupedParticipantsList(bool isDark) {

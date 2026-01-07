@@ -171,6 +171,36 @@ service cloud.firestore {
       );
     }
     
+    // Participant Registration Info collection - stores detailed info (t-shirt, food, etc)
+    match /participant_registration_info/{infoId} {
+      // Organizers and admins can read all registration info
+      // Participants can read their own registration info
+      allow read: if isAuthenticated() && (
+        isAdmin(getUserId()) ||
+        isOrganizer(getUserId()) ||
+        (resource.data.userId == getUserId())
+      );
+      
+      // Participants can create their own registration info
+      allow create: if isAuthenticated() && 
+        isParticipant(getUserId()) &&
+        request.resource.data.userId == getUserId();
+      
+      // Participants can update their own info
+      // Organizers and admins can update any info
+      allow update: if isAuthenticated() && (
+        (resource.data.userId == getUserId() && request.resource.data.userId == getUserId()) ||
+        isAdmin(getUserId()) ||
+        isOrganizer(getUserId())
+      );
+      
+      // Organizers and admins can delete info
+      allow delete: if isAuthenticated() && (
+        isAdmin(getUserId()) ||
+        isOrganizer(getUserId())
+      );
+    }
+    
     // Expense Tracker collection - stores event expenses
     match /event_expenses/{expenseId} {
       // Allow organizers and admins to read expenses
@@ -238,6 +268,64 @@ service cloud.firestore {
       // Only admins can create/update/delete settings
       allow write: if isAuthenticated() && isAdmin(getUserId());
     }
+    
+    // Event Items collection - stores items to be distributed at events
+    match /event_items/{itemId} {
+      // Organizers and admins can read all items
+      // Participants can read items for events they're registered for
+      allow read: if isAuthenticated() && (
+        isAdmin(getUserId()) ||
+        isOrganizer(getUserId())
+      );
+      
+      // Organizers and admins can create items for their events
+      allow create: if isAuthenticated() && (
+        isAdmin(getUserId()) ||
+        isOrganizer(getUserId())
+      ) &&
+      request.resource.data.keys().hasAll(['eventId', 'name', 'totalQuantity', 'createdBy', 'createdAt']);
+      
+      // Organizers and admins can update items
+      // Only allow updating distributedQuantity and related fields
+      allow update: if isAuthenticated() && (
+        isAdmin(getUserId()) ||
+        isOrganizer(getUserId())
+      );
+      
+      // Organizers and admins can delete items
+      allow delete: if isAuthenticated() && (
+        isAdmin(getUserId()) ||
+        (isOrganizer(getUserId()) && resource.data.createdBy == getUserId())
+      );
+    }
+    
+    // Item Distributions collection - tracks who received which items
+    match /item_distributions/{distributionId} {
+      // Organizers and admins can read all distributions
+      // Participants can read their own distributions
+      allow read: if isAuthenticated() && (
+        isAdmin(getUserId()) ||
+        isOrganizer(getUserId()) ||
+        (resource != null && resource.data.participantId == getUserId())
+      );
+      
+      // Organizers and admins can create distribution records
+      allow create: if isAuthenticated() && (
+        isAdmin(getUserId()) ||
+        isOrganizer(getUserId())
+      ) &&
+      request.resource.data.keys().hasAll(['eventId', 'itemId', 'participantId', 'distributedAt', 'distributedBy']);
+      
+      // Only admins can update distributions (for corrections)
+      allow update: if isAuthenticated() && isAdmin(getUserId());
+      
+      // Organizers and admins can delete distributions (undo mistakes)
+      allow delete: if isAuthenticated() && (
+        isAdmin(getUserId()) ||
+        isOrganizer(getUserId())
+      );
+    }
+
     
     // Default deny all other access
     match /{document=**} {

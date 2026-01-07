@@ -20,6 +20,7 @@ import 'notifications_screen.dart';
 import 'settings_screen.dart';
 import 'help_support_screen.dart';
 import 'polls_screen.dart';
+import 'item_distribution_screen.dart';
 import '../services/theme_service.dart';
 
 class OrganizerDashboard extends StatefulWidget {
@@ -1320,6 +1321,36 @@ class _OrganizerDashboardState extends State<OrganizerDashboard> {
                       context,
                       MaterialPageRoute(
                         builder: (context) => const PollsScreen(),
+                      ),
+                    );
+                  },
+                ),
+                _buildDivider(),
+                _buildProfileOption(
+                  'Item Distribution',
+                  Icons.inventory_2,
+                  Colors.orange,
+                  () {
+                    // Check if user has any events before allowing access
+                    if (_myEvents.isEmpty) {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(
+                          content: Text('Create an event first to manage item distribution'),
+                          backgroundColor: Colors.orange,
+                        ),
+                      );
+                      return;
+                    }
+                    
+                    // If user has events, show event selector or go to first event
+                    final eventId = _myEvents.first.id;
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (context) => ItemDistributionScreen(
+                          eventId: eventId,
+                          currentUserId: _currentUser?.id ?? widget.userId ?? '',
+                        ),
                       ),
                     );
                   },

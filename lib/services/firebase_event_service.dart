@@ -1,5 +1,6 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import '../models/event.dart';
+import '../models/user.dart' as app_user;
 import '../models/participant_registration_info.dart';
 import '../models/event_review.dart';
 import '../utils/data_cache.dart';
@@ -183,6 +184,115 @@ class FirebaseEventService {
         .where((d) => d.exists)
         .map((d) => EventFirestore.fromFirestore(d))
         .toList();
+  }
+
+  // Get a single event by ID
+  static Future<Event?> getEventById(String eventId) async {
+    try {
+      final doc = await _eventsCol.doc(eventId).get();
+      if (doc.exists) {
+        return EventFirestore.fromFirestore(doc);
+      }
+      return null;
+    } catch (e) {
+      print('Error fetching event by ID: $e');
+      return null;
+    }
+  }
+
+  // Get registered participants as User objects for an event
+  static Future<List<app_user.User>> getRegisteredParticipants(String eventId) async {
+    try {
+      final event = await getEventById(eventId);
+      if (event == null) return [];
+      
+      if (event.participants.isEmpty) return [];
+
+      // Fetch users in parallel chunks to speed up loading
+      final List<app_user.User> participants = [];
+      const chunkSize = 20; // Reasonable batch size
+      
+      for (var i = 0; i < event.participants.length; i += chunkSize) {
+        final end = (i + chunkSize < event.participants.length) ? i + chunkSize : event.participants.length;
+        final batchIds = event.participants.sublist(i, end);
+        
+        final futures = batchIds.map((userId) => 
+            _firestore.collection('users').doc(userId).get()
+        );
+        
+        final snapshots = await Future.wait(futures);
+        
+        for (var userDoc in snapshots) {
+          if (userDoc.exists) {
+            final data = userDoc.data();
+            if (data != null) {
+              participants.add(app_user.User(
+                id: userDoc.id,
+                email: data['email'] as String? ?? '',
+                name: data['name'] as String? ?? '',
+                universityId: data['universityId'] as String? ?? '',
+                type: _parseUserType(data['type'] as String? ?? 'participant'),
+                profileImageUrl: data['profileImageUrl'] as String?,
+                createdAt: _parseDateTime(data['createdAt']) ?? DateTime.now(),
+                lastLoginAt: _parseDateTime(data['lastLoginAt']),
+              ));
+            }
+          }
+        }
+      }
+      
+      return participants;
+    } catch (e) {
+      print('Error getting registered participants: $e');
+      return [];
+    }
+  }
+
+  // Get all registration info for an event (Map of UserId -> Info)
+  static Future<Map<String, Map<String, dynamic>>> getParticipantRegistrations(String eventId) async {
+    try {
+      final snapshot = await _firestore
+          .collection('participant_registration_info')
+          .where('eventId', isEqualTo: eventId)
+          .get();
+
+      final Map<String, Map<String, dynamic>> result = {};
+      
+      for (var doc in snapshot.docs) {
+        final data = doc.data();
+        final userId = data['userId'] as String?;
+        if (userId != null) {
+          result[userId] = data;
+        }
+      }
+      
+      return result;
+    } catch (e) {
+      print('Error getting registrations: $e');
+      return {};
+    }
+  }
+
+  // Helper to parse user type from string
+  static app_user.UserType _parseUserType(String type) {
+    switch (type.toLowerCase()) {
+      case 'participant':
+        return app_user.UserType.participant;
+      case 'organizer':
+        return app_user.UserType.organizer;
+      case 'admin':
+        return app_user.UserType.admin;
+      default:
+        return app_user.UserType.participant;
+    }
+  }
+
+  // Helper to parse DateTime from various formats
+  static DateTime? _parseDateTime(dynamic value) {
+    if (value == null) return null;
+    if (value is Timestamp) return value.toDate();
+    if (value is String) return DateTime.tryParse(value);
+    return null;
   }
 
   static Stream<List<Event>> getUserEventsStream(String userId) {
