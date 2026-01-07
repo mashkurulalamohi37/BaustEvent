@@ -1,5 +1,6 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_core/firebase_core.dart';
+import 'package:google_sign_in/google_sign_in.dart';
 import 'package:firebase_auth/firebase_auth.dart' as firebase_auth;
 import '../models/user.dart';
 import '../firebase_options.dart';
@@ -235,6 +236,81 @@ class FirebaseUserService {
       } else {
         throw Exception('Error signing in: ${e.toString().replaceFirst('Exception: ', '')}');
       }
+    }
+  }
+
+  static Future<User?> signInWithGoogle() async {
+    try {
+      final googleSignIn = GoogleSignIn();
+      final googleUser = await googleSignIn.signIn();
+      if (googleUser == null) return null; // User canceled
+
+      final googleAuth = await googleUser.authentication;
+      final credential = firebase_auth.GoogleAuthProvider.credential(
+        accessToken: googleAuth.accessToken,
+        idToken: googleAuth.idToken,
+      );
+
+      final userCredential = await firebase_auth.FirebaseAuth.instance.signInWithCredential(credential);
+      final fbUser = userCredential.user;
+      if (fbUser == null) return null;
+
+      // Check if user document exists
+      final userDoc = await _usersCol.doc(fbUser.uid).get();
+      
+      User? appUser;
+      
+      if (userDoc.exists) {
+        final data = userDoc.data();
+        if (data != null) {
+          appUser = User(
+              id: userDoc.id,
+              email: data['email'] ?? fbUser.email ?? '',
+              name: data['name'] ?? fbUser.displayName ?? '',
+              universityId: data['universityId'] ?? '',
+              type: _parseUserTypeAny(data['type']),
+              profileImageUrl: data['profileImageUrl'] ?? fbUser.photoURL,
+              createdAt: _parseDateAny(data['createdAt']) ?? DateTime.now(),
+              lastLoginAt: DateTime.now(),
+          );
+          // Update last login
+          await _usersCol.doc(appUser.id).update({
+             'lastLoginAt': DateTime.now().toIso8601String(),
+          });
+        }
+      } else {
+        // Create new user
+        appUser = User(
+            id: fbUser.uid,
+            email: fbUser.email ?? '',
+            name: fbUser.displayName ?? 'Google User',
+            universityId: '', 
+            type: UserType.participant,
+            profileImageUrl: fbUser.photoURL,
+            createdAt: DateTime.now(),
+            lastLoginAt: DateTime.now(),
+        );
+        
+        await _usersCol.doc(appUser.id).set({
+          'email': appUser.email,
+          'name': appUser.name,
+          'universityId': appUser.universityId,
+          'type': 'participant',
+          'profileImageUrl': appUser.profileImageUrl,
+          'createdAt': appUser.createdAt.toIso8601String(),
+          'lastLoginAt': appUser.lastLoginAt?.toIso8601String(),
+        });
+      }
+      
+      // Cache user
+      if (appUser != null) {
+         DataCache.cacheUser(appUser);
+      }
+      return appUser;
+      
+    } catch (e) {
+      print('Google Sign In Error: $e');
+      throw Exception('Google Sign-In failed: $e');
     }
   }
 

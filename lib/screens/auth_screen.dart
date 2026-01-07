@@ -291,6 +291,34 @@ class _AuthScreenState extends State<AuthScreen> {
                         ),
                 ),
               ),
+              const SizedBox(height: 16),
+              Row(
+                children: [
+                  Expanded(child: Divider(color: Colors.grey[300], thickness: 1.5)),
+                  Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 16),
+                    child: Text('OR', style: TextStyle(color: Colors.grey[600], fontWeight: FontWeight.w500)),
+                  ),
+                  Expanded(child: Divider(color: Colors.grey[300], thickness: 1.5)),
+                ],
+              ),
+              const SizedBox(height: 16),
+              SizedBox(
+                height: 56,
+                child: OutlinedButton.icon(
+                  onPressed: _isLoading ? null : _handleGoogleSignIn,
+                  style: OutlinedButton.styleFrom(
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                    side: BorderSide(color: Colors.grey[300]!),
+                    backgroundColor: Colors.white,
+                  ),
+                  icon: const Icon(Icons.g_mobiledata, size: 32, color: Colors.blue),
+                  label: const Text(
+                    'Continue with Google',
+                    style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Colors.black87),
+                  ),
+                ),
+              ),
               const SizedBox(height: 24),
               Row(
                 mainAxisAlignment: MainAxisAlignment.center,
@@ -544,6 +572,43 @@ class _AuthScreenState extends State<AuthScreen> {
     
     if (mounted) {
       setState(() => _isLoading = false);
+    }
+  }
+
+  Future<void> _handleGoogleSignIn() async {
+    setState(() => _isLoading = true);
+
+    try {
+      final user = await FirebaseUserService.signInWithGoogle();
+      
+      if (user != null && mounted) {
+           Navigator.pushReplacement(
+            context,
+            MaterialPageRoute(
+              builder: (context) {
+                if (user.isAdmin) {
+                  return AdminDashboard(userId: user.id);
+                } else if (user.type == UserType.organizer) {
+                  return OrganizerDashboard(userId: user.id);
+                } else {
+                  return ParticipantDashboard(userId: user.id);
+                }
+              },
+            ),
+          );
+      } else {
+        if (mounted) setState(() => _isLoading = false);
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() => _isLoading = false);
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(e.toString().replaceAll('Exception: ', '')),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
     }
   }
 
