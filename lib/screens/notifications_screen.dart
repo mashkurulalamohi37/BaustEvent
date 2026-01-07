@@ -288,10 +288,10 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
           if (unreadCount > 0)
             TextButton.icon(
               onPressed: _markAllAsRead,
-              icon: const Icon(Icons.done_all, color: Colors.blue, size: 20),
-              label: const Text('Mark all read'),
+              icon: const Icon(Icons.done_all, color: Colors.white, size: 20),
+              label: const Text('Mark all read', style: TextStyle(fontWeight: FontWeight.bold)),
               style: TextButton.styleFrom(
-                foregroundColor: Colors.blue,
+                foregroundColor: Colors.white,
               ),
             ),
         ],
