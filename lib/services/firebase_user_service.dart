@@ -304,7 +304,7 @@ class FirebaseUserService {
       
       // Cache user
       if (appUser != null) {
-         DataCache.cacheUser(appUser);
+         DataCache().cacheUser(appUser);
       }
       return appUser;
       
