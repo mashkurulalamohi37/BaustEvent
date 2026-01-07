@@ -1084,7 +1084,7 @@ class _EventDetailsScreenState extends State<EventDetailsScreen> {
                       child: ElevatedButton.icon(
                         onPressed: _isLoading ? null : _markEventAsDone,
                         style: ElevatedButton.styleFrom(
-                          backgroundColor: Colors.orange,
+                          backgroundColor: const Color(0xFF4CAF50),
                           shape: RoundedRectangleBorder(
                             borderRadius: BorderRadius.circular(12),
                           ),

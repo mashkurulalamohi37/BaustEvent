@@ -1779,7 +1779,7 @@ class _OrganizerDashboardState extends State<OrganizerDashboard> {
                         value: 'done',
                         child: Row(
                           children: [
-                            const Icon(Icons.check_circle, size: 20, color: Colors.orange),
+                            const Icon(Icons.check_circle, size: 20, color: Color(0xFF4CAF50)),
                             const SizedBox(width: 8),
                             Text(
                               'Mark as Done',
