@@ -648,28 +648,35 @@ class _ItemDistributionScreenState extends State<ItemDistributionScreen> with Si
     return Container(
       width: double.infinity,
       color: Colors.blue.shade50,
-      padding: const EdgeInsets.fromLTRB(16, 8, 16, 12),
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Text(
             isFood ? 'Food Requirements (Filtered):' : 'Size Requirements (Filtered):',
-            style: TextStyle(fontWeight: FontWeight.bold, color: Colors.blue.shade900, fontSize: 13),
+            style: TextStyle(fontWeight: FontWeight.w600, color: Colors.blue.shade900, fontSize: 12),
           ),
-          const SizedBox(height: 8),
+          const SizedBox(height: 6),
           Wrap(
-            spacing: 8,
-            runSpacing: 8,
+            spacing: 6,
+            runSpacing: 6,
             children: sortedKeys.map((key) {
                final count = counts[key];
                return Container(
-                 padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                 padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                  decoration: BoxDecoration(
                    color: Colors.white,
-                   borderRadius: BorderRadius.circular(12),
-                   border: Border.all(color: Colors.blue.shade100),
+                   borderRadius: BorderRadius.circular(8),
+                   border: Border.all(color: Colors.blue.shade200, width: 1),
                  ),
-                 child: Text('$key: $count', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 12)),
+                 child: Text(
+                   '$key: $count',
+                   style: TextStyle(
+                     fontWeight: FontWeight.w600,
+                     fontSize: 11,
+                     color: Colors.blue.shade800,
+                   ),
+                 ),
                );
             }).toList(),
           ),
@@ -714,7 +721,7 @@ class _ItemDistributionScreenState extends State<ItemDistributionScreen> with Si
             // Batch Header with Button
             Container(
               width: double.infinity,
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
               decoration: BoxDecoration(
                 gradient: LinearGradient(
                   colors: [Colors.blue.shade100, Colors.blue.shade50],
@@ -722,7 +729,7 @@ class _ItemDistributionScreenState extends State<ItemDistributionScreen> with Si
                   end: Alignment.bottomRight,
                 ),
                 border: Border(
-                  left: BorderSide(color: Colors.blue.shade700, width: 4),
+                  left: BorderSide(color: Colors.blue.shade700, width: 3),
                 ),
               ),
               child: Row(
@@ -732,8 +739,9 @@ class _ItemDistributionScreenState extends State<ItemDistributionScreen> with Si
                     'Batch $batch',
                     style: TextStyle(
                       fontWeight: FontWeight.bold,
-                      fontSize: 16,
+                      fontSize: 15,
                       color: Colors.blue.shade900,
+                      letterSpacing: -0.2,
                     ),
                    ),
                    ElevatedButton.icon(
@@ -745,16 +753,17 @@ class _ItemDistributionScreenState extends State<ItemDistributionScreen> with Si
                         }
                         _markListAsDistributed(allInBatch);
                      },
-                     icon: const Icon(Icons.check_circle, size: 18),
+                     icon: const Icon(Icons.check_circle, size: 16),
                      label: const Text('Mark Batch'),
                      style: ElevatedButton.styleFrom(
                        backgroundColor: Colors.blue.shade700,
                        foregroundColor: Colors.white,
-                       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                       textStyle: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600),
+                       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                       textStyle: const TextStyle(fontSize: 11, fontWeight: FontWeight.w600),
                        shape: RoundedRectangleBorder(
-                         borderRadius: BorderRadius.circular(8),
+                         borderRadius: BorderRadius.circular(6),
                        ),
+                       elevation: 2,
                      ),
                    ),
                 ],
@@ -767,12 +776,12 @@ class _ItemDistributionScreenState extends State<ItemDistributionScreen> with Si
                  children: [
                    // Section Header with Button
                    Container(
-                     margin: const EdgeInsets.only(top: 8),
-                     padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                     margin: const EdgeInsets.only(top: 6),
+                     padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
                      decoration: BoxDecoration(
                        color: Colors.grey.shade100,
                        border: Border(
-                         left: BorderSide(color: Colors.grey.shade400, width: 3),
+                         left: BorderSide(color: Colors.grey.shade400, width: 2.5),
                        ),
                      ),
                      child: Row(
@@ -782,22 +791,24 @@ class _ItemDistributionScreenState extends State<ItemDistributionScreen> with Si
                            'Section $section',
                            style: TextStyle(
                              fontWeight: FontWeight.w600,
-                             fontSize: 14,
+                             fontSize: 13,
                              color: Colors.grey.shade700,
+                             letterSpacing: -0.2,
                            ),
                          ),
                          ElevatedButton.icon(
                            onPressed: () => _markListAsDistributed(sectionPs),
-                           icon: const Icon(Icons.done_all, size: 16),
+                           icon: const Icon(Icons.done_all, size: 14),
                            label: const Text('Mark Section'),
                            style: ElevatedButton.styleFrom(
                              backgroundColor: Colors.grey.shade600,
                              foregroundColor: Colors.white,
-                             padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-                             textStyle: const TextStyle(fontSize: 11, fontWeight: FontWeight.w600),
+                             padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
+                             textStyle: const TextStyle(fontSize: 10, fontWeight: FontWeight.w600),
                              shape: RoundedRectangleBorder(
-                               borderRadius: BorderRadius.circular(6),
+                               borderRadius: BorderRadius.circular(5),
                              ),
+                             elevation: 1,
                            ),
                          ),
                        ],
@@ -818,11 +829,21 @@ class _ItemDistributionScreenState extends State<ItemDistributionScreen> with Si
     bool hasReceived = p['hasReceived'];
     
     return Container(
-      margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+      margin: const EdgeInsets.symmetric(horizontal: 14, vertical: 3),
       decoration: BoxDecoration(
         color: Colors.white,
-        borderRadius: BorderRadius.circular(8),
-        boxShadow: [BoxShadow(color: Colors.black12, blurRadius: 2, offset: const Offset(0,1))],
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(
+          color: hasReceived ? Colors.green.shade200 : Colors.grey.shade200,
+          width: 1,
+        ),
+        boxShadow: [
+          BoxShadow(
+            color: hasReceived ? Colors.green.withOpacity(0.1) : Colors.black.withOpacity(0.05),
+            blurRadius: 4,
+            offset: const Offset(0, 2),
+          ),
+        ],
       ),
       child: Column(
         children: [
@@ -834,17 +855,18 @@ class _ItemDistributionScreenState extends State<ItemDistributionScreen> with Si
                });
             },
             child: Padding(
-              padding: const EdgeInsets.all(12),
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
               child: Row(
                 children: [
                    CircleAvatar(
-                     backgroundColor: hasReceived ? Colors.green : Colors.blue,
+                     radius: 18,
+                     backgroundColor: hasReceived ? Colors.green.shade600 : Colors.blue.shade600,
                      child: Text(
                        (p['name'] as String)[0].toUpperCase(),
-                       style: const TextStyle(color: Colors.white),
+                       style: const TextStyle(color: Colors.white, fontSize: 14, fontWeight: FontWeight.bold),
                      ),
                    ),
-                   const SizedBox(width: 12),
+                   const SizedBox(width: 10),
                    Expanded(
                      child: Column(
                        crossAxisAlignment: CrossAxisAlignment.start,
@@ -852,17 +874,24 @@ class _ItemDistributionScreenState extends State<ItemDistributionScreen> with Si
                          Text(
                            p['name'], 
                            style: TextStyle(
-                             fontWeight: FontWeight.bold, 
+                             fontWeight: FontWeight.w600,
+                             fontSize: 14,
+                             letterSpacing: -0.2,
                              decoration: hasReceived ? TextDecoration.lineThrough : null,
-                             color: hasReceived ? Colors.grey : Colors.black87
+                             color: hasReceived ? Colors.grey.shade600 : Colors.black87
                            )
                          ),
-                         Text('ID: ${p['universityId']}', style: const TextStyle(fontSize: 12, color: Colors.grey)),
+                         const SizedBox(height: 2),
+                         Text(
+                           'ID: ${p['universityId']}',
+                           style: TextStyle(fontSize: 11, color: Colors.grey[600]),
+                         ),
                        ],
                      ),
                    ),
                    Checkbox(
                      value: hasReceived,
+                     visualDensity: VisualDensity.compact,
                      onChanged: (val) {
                        if (val == true) _markAsDistributed(p);
                        else _unmarkAsDistributed(p);
