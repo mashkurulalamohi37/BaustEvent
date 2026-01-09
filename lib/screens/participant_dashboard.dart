@@ -2023,6 +2023,38 @@ class _ParticipantDashboardState extends State<ParticipantDashboard> {
                     ],
                   ),
                 ],
+                  const SizedBox(height: 16),
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFF1976D2).withOpacity(0.1),
+                      borderRadius: BorderRadius.circular(20),
+                      border: Border.all(
+                        color: const Color(0xFF1976D2).withOpacity(0.5),
+                        width: 1.5,
+                      ),
+                    ),
+                    child: const Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(
+                          Icons.person,
+                          size: 18,
+                          color: Color(0xFF1976D2),
+                        ),
+                        SizedBox(width: 8),
+                        Text(
+                          'Participant',
+                          style: TextStyle(
+                            fontSize: 14,
+                            fontWeight: FontWeight.bold,
+                            color: Color(0xFF1976D2),
+                            letterSpacing: 0.5,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
               ],
             ),
           ),

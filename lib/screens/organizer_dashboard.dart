@@ -22,6 +22,7 @@ import 'help_support_screen.dart';
 import 'polls_screen.dart';
 import 'item_distribution_screen.dart';
 import '../services/theme_service.dart';
+import '../widgets/ios_install_prompt.dart';
 
 class OrganizerDashboard extends StatefulWidget {
   final String? userId;
@@ -385,7 +386,8 @@ class _OrganizerDashboardState extends State<OrganizerDashboard> {
   @override
   Widget build(BuildContext context) {
     print('OrganizerDashboard build() called - isLoading: $_isLoading, events: ${_myEvents.length}');
-    return PopScope(
+    return PWAWrapper(
+      child: PopScope(
       canPop: false,
       onPopInvoked: (didPop) async {
         if (didPop) return;
@@ -514,6 +516,7 @@ class _OrganizerDashboardState extends State<OrganizerDashboard> {
         ),
       ),
       ),
+    ),
     );
   }
 
@@ -1317,7 +1320,39 @@ class _OrganizerDashboardState extends State<OrganizerDashboard> {
                       ),
                     ],
                   ),
-                ],
+                  ],
+                  const SizedBox(height: 16),
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFF1976D2).withOpacity(0.1),
+                      borderRadius: BorderRadius.circular(20),
+                      border: Border.all(
+                        color: const Color(0xFF1976D2).withOpacity(0.5),
+                        width: 1.5,
+                      ),
+                    ),
+                    child: const Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(
+                          Icons.verified_user,
+                          size: 18,
+                          color: Color(0xFF1976D2),
+                        ),
+                        SizedBox(width: 8),
+                        Text(
+                          'Organizer',
+                          style: TextStyle(
+                            fontSize: 14,
+                            fontWeight: FontWeight.bold,
+                            color: Color(0xFF1976D2),
+                            letterSpacing: 0.5,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
               ],
             ),
           ),

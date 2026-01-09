@@ -15,6 +15,8 @@ import 'package:excel/excel.dart' hide Border;
 import 'package:path_provider/path_provider.dart';
 import 'dart:io';
 import 'package:share_plus/share_plus.dart';
+import '../widgets/profile_avatar.dart';
+
 
 class ManageParticipantsScreen extends StatefulWidget {
   final Event event;
@@ -656,17 +658,9 @@ class _ManageParticipantsScreenState extends State<ManageParticipantsScreen> {
                         padding: const EdgeInsets.all(16),
                         child: Row(
                           children: [
-                            CircleAvatar(
+                            ProfileAvatar(
+                              user: user,
                               radius: 30,
-                              backgroundColor: const Color(0xFF1976D2),
-                              child: Text(
-                                user.name[0].toUpperCase(),
-                                style: const TextStyle(
-                                  color: Colors.white,
-                                  fontSize: 24,
-                                  fontWeight: FontWeight.bold,
-                                ),
-                              ),
                             ),
                             const SizedBox(width: 16),
                             Expanded(
@@ -1694,14 +1688,10 @@ class _ManageParticipantsScreenState extends State<ManageParticipantsScreen> {
                           child: Padding(
                             padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                             child: Row(
-              children: [
-                CircleAvatar(
+                children: [
+                ProfileAvatar(
+                  user: participant,
                   radius: 20,
-                  backgroundColor: const Color(0xFF1976D2),
-                  child: Text(
-                    participant.name[0].toUpperCase(),
-                    style: const TextStyle(color: Colors.white, fontSize: 14),
-                  ),
                 ),
                 const SizedBox(width: 10),
                 Expanded(
@@ -1960,12 +1950,9 @@ class _ManageParticipantsScreenState extends State<ManageParticipantsScreen> {
               children: [
                 Row(
                   children: [
-                    CircleAvatar(
-                      backgroundColor: Colors.orange.shade300,
-                      child: Text(
-                        user.name[0].toUpperCase(),
-                        style: const TextStyle(color: Colors.white),
-                      ),
+                    ProfileAvatar(
+                      user: user,
+                      radius: 20,
                     ),
                     const SizedBox(width: 12),
                     Expanded(

@@ -6,6 +6,8 @@ import '../models/user.dart' as app_user;
 import '../services/firebase_item_distribution_service.dart';
 import '../services/firebase_event_service.dart';
 import '../services/theme_service.dart';
+import '../widgets/profile_avatar.dart';
+
 
 class ItemDistributionScreen extends StatefulWidget {
   final String eventId;
@@ -591,6 +593,7 @@ class _ItemDistributionScreenState extends State<ItemDistributionScreen> with Si
         'name': participant.name,
         'universityId': participant.universityId,
         'email': participant.email,
+        'profileImageUrl': participant.profileImageUrl, // Add profile image URL
         'batch': batch,
         'section': section,
         'hall': hall,
@@ -858,13 +861,10 @@ class _ItemDistributionScreenState extends State<ItemDistributionScreen> with Si
               padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
               child: Row(
                 children: [
-                   CircleAvatar(
+                   ProfileAvatarFromMap(
+                     participant: p,
                      radius: 18,
                      backgroundColor: hasReceived ? Colors.green.shade600 : Colors.blue.shade600,
-                     child: Text(
-                       (p['name'] as String)[0].toUpperCase(),
-                       style: const TextStyle(color: Colors.white, fontSize: 14, fontWeight: FontWeight.bold),
-                     ),
                    ),
                    const SizedBox(width: 10),
                    Expanded(
