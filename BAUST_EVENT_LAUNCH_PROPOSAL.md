@@ -9,7 +9,7 @@
 
 ## 1. Executive Summary
 
-**EventBridge** is a comprehensive, digital solution designed specifically for Bangladesh Army University of Science and Technology (BAUST) to modernize and streamline the management of campus events. This application replaces fragmented, manual coordination methods with a centralized, data-driven platform that handles everything from participant registration to financial tracking and item distribution. This proposal outlines the critical operational challenges currently faced by BAUST and how EventBridge addresses them to improve transparency, efficiency, and student engagement.
+**EventBridge** is a comprehensive, digital solution designed specifically for Bangladesh Army University of Science and Technology (BAUST) to modernize and streamline the management of campus events. This application replaces fragmented, manual coordination methods with a centralized, data-driven platform that handles everything from participant registration to financial tracking and item distribution. **The system has already been successfully tested by 84 BAUST students, demonstrating its stability and user-friendliness.** This proposal outlines the critical operational challenges currently faced by BAUST and how EventBridge addresses them to improve transparency, efficiency, and student engagement.
 
 ---
 
@@ -82,6 +82,7 @@ EventBridge solves these specific problems through a unified, role-based archite
   - **Native App Cost:** Publishing a dedicated iOS app requires an annual Apple Developer fee of **$99 USD/year**.
   - **PWA Solution:** By deploying as a **Progressive Web App (PWA)**, we provide iPhone users with an "app-like" experience (Home Screen icon, offline support) **completely free of charge**.
   - **Free Hosting:** The platform is hosted via **GitHub Services**, ensuring **zero server costs** for the university while maintaining high uptime and security.
+  - **Seamless Sharing:** A **dedicated QR code** is generated within the app to instantly share the PWA version with iOS users, making onboarding effortless.
 
 - **Cross-Platform Accessibility:** Works seamlessly on Android, iOS, and Desktop browsers without requiring app store downloads.
 - **Security:** Built on Google Firebase with secure authentication (Email/Google Sign-In) and robust database rules to protect student data.
